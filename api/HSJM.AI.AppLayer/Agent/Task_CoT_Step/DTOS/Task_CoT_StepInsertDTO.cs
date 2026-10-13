@@ -1,0 +1,187 @@
+
+
+//使用平台信息: ID:NETCORE_WebApi  描述:NETCORE_WebApi
+//代码版本信息: ID:V4  描述:V4_SqlSugar 添加时间:2026/1/15 15:24:17
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+namespace HSJM.AI.AppLayer.Agent.DTOS
+{
+    /// <summary>
+    /// 任务 CoT 步骤表 - 存储任务执行时的步骤实例
+    /// </summary>
+    public class Task_CoT_StepInsertDTO
+    {
+            /// <summary>
+        ///  关联任务ID (AI_Agent_Task)
+        /// </summary>
+        [Description("关联任务ID (AI_Agent_Task)")]
+                  [Required]
+                   [Range(0, long.MaxValue)]
+                  public long? TaskID {get;set;}
+        
+          /// <summary>
+        ///  步骤顺序(1, 2, 3...)
+        /// </summary>
+        [Description("步骤顺序(1, 2, 3...)")]
+                  [Required]
+                   [Range(0, int.MaxValue)]
+                  public int? StepOrder {get;set;}
+        
+          /// <summary>
+        ///  步骤名称
+        /// </summary>
+        [Description("步骤名称")]
+                  [Required]
+                   [MinLength(0)]
+                   [MaxLength(100)]
+                  public string StepName {get;set;}
+        
+          /// <summary>
+        ///  步骤说明
+        /// </summary>
+        [Description("步骤说明")]
+                  [MinLength(0)]
+                   [MaxLength(500)]
+                  public string StepDescription {get;set;}
+        
+          /// <summary>
+        ///  该步骤的 Prompt 模板(支持占位符: {taskContext.xxx}, {previousOutput})
+        /// </summary>
+        [Description("该步骤的 Prompt 模板(支持占位符: {taskContext.xxx}, {previousOutput})")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string StepPrompt {get;set;}
+        
+          /// <summary>
+        ///  是否使用上一步输出作为输入
+        /// </summary>
+        [Description("是否使用上一步输出作为输入")]
+                  [Required]
+                  public bool? InputFromPrevStep {get;set;}
+        
+          /// <summary>
+        ///  输出格式要求 JSON Schema(用于验证)
+        /// </summary>
+        [Description("输出格式要求 JSON Schema(用于验证)")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string OutputSchema {get;set;}
+        
+          /// <summary>
+        ///  自定义验证规则 JSON(可选)
+        /// </summary>
+        [Description("自定义验证规则 JSON(可选)")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string ValidationRule {get;set;}
+        
+          /// <summary>
+        ///  是否强制执行(true: 失败则终止任务, false: 失败可继续)
+        /// </summary>
+        [Description("是否强制执行(true: 失败则终止任务, false: 失败可继续)")]
+                  [Required]
+                  public bool? IsMandatory {get;set;}
+        
+          /// <summary>
+        ///  是否允许跳过
+        /// </summary>
+        [Description("是否允许跳过")]
+                  [Required]
+                  public bool? AllowSkip {get;set;}
+        
+          /// <summary>
+        ///  跳过条件表达式(如: syntaxErrors.Count > 10)
+        /// </summary>
+        [Description("跳过条件表达式(如: syntaxErrors.Count > 10)")]
+                  [MinLength(0)]
+                   [MaxLength(500)]
+                  public string SkipCondition {get;set;}
+        
+          /// <summary>
+        ///  状态: NotStarted(未开始)/InProgress(执行中)/Completed(已完成)/Skipped(已跳过)/Failed(失败)
+        /// </summary>
+        [Description("状态: NotStarted(未开始)/InProgress(执行中)/Completed(已完成)/Skipped(已跳过)/Failed(失败)")]
+                  [Required]
+                   [MinLength(0)]
+                   [MaxLength(20)]
+                  public string Status {get;set;}
+        
+          /// <summary>
+        ///  步骤开始时间
+        /// </summary>
+        [Description("步骤开始时间")]
+                 public DateTime? StartTime {get;set;}
+        
+          /// <summary>
+        ///  步骤结束时间
+        /// </summary>
+        [Description("步骤结束时间")]
+                 public DateTime? EndTime {get;set;}
+        
+          /// <summary>
+        ///  执行时长(毫秒)
+        /// </summary>
+        [Description("执行时长(毫秒)")]
+                  [Range(0, int.MaxValue)]
+                  public int? Duration {get;set;}
+        
+          /// <summary>
+        ///  思考过程(Agent 内部推理过程)
+        /// </summary>
+        [Description("思考过程(Agent 内部推理过程)")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string ThinkingProcess {get;set;}
+        
+          /// <summary>
+        ///  步骤输出 JSON(结构化结果)
+        /// </summary>
+        [Description("步骤输出 JSON(结构化结果)")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string StepOutput {get;set;}
+        
+          /// <summary>
+        ///  错误信息(失败时记录)
+        /// </summary>
+        [Description("错误信息(失败时记录)")]
+                  [MinLength(0)]
+                   [MaxLength(-1)]
+                  public string ErrorMessage {get;set;}
+        
+          /// <summary>
+        ///  执行该步骤的智能体角色ID(允许步骤级别指定不同角色)
+        /// </summary>
+        [Description("执行该步骤的智能体角色ID(允许步骤级别指定不同角色)")]
+                  [Range(0, long.MaxValue)]
+                  public long? ExecutorRoleId {get;set;}
+        
+          /// <summary>
+        ///  使用的模型名称(如: gpt-4, claude-3)
+        /// </summary>
+        [Description("使用的模型名称(如: gpt-4, claude-3)")]
+                  [MinLength(0)]
+                   [MaxLength(50)]
+                  public string ModelUsed {get;set;}
+        
+          /// <summary>
+        ///  消耗的 Token 数量
+        /// </summary>
+        [Description("消耗的 Token 数量")]
+                  [Range(0, int.MaxValue)]
+                  public int? TokensUsed {get;set;}
+        
+          /// <summary>
+        ///  重试次数
+        /// </summary>
+        [Description("重试次数")]
+                  [Required]
+                   [Range(0, int.MaxValue)]
+                  public int? RetryCount {get;set;}
+        
+     
+
+    }
+}

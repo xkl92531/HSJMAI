@@ -1,0 +1,85 @@
+name: hsjm-ai-test2
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  api:
+    image: hsjm-ai-api:${HSJM_VERSION:?HSJM_VERSION is supplied by the deployment scripts}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Direct "urls" overrides the legacy 2405 value in appsettings.json.
+      urls: http://+:${HSJM_HTTP_PORT:?start.sh selects a free host port}
+      TZ: ${HSJM_TIME_ZONE:-Asia/Shanghai}
+      PythonPath: /opt/venv/bin/python
+      AI__ExternalTools__PythonPath: /opt/venv/bin/python
+      # ================= 测试版隔离开关（2026-09-04） =================
+      # 1) 关闭 MCP 自注册：正式版靠 ai_mcp_server 里 hsjm-diagnosis 的 URL
+      #    （http://127.0.0.1:28000/mcp）寻址，测试实例注册会把 URL 改写成测试端口。
+      McpDiagnosisRegistration__Enabled: "false"
+      # 2) 后台任务/Hangfire server 开启：该开关同时闸 AddHangfireServer（Program.cs:290），
+      #    关掉会让 LineUp 导入预览等所有 BackgroundJob.Enqueue 的任务永远无人执行（批次卡 Uploaded）。
+      #    隔离性由下方 DBList__1 指向 hsjm_ai_new_test 保证——Hangfire 存储与正式版 hsjm_ai_new 分库，
+      #    不存在跨实例抢任务；local_<机器名> 队列锁进一步隔离（容器主机名不同）。
+      WebConfig__BackgroundJobs__Enabled: "true"
+      # 3) Redis 键空间隔离到 db1（正式版用 db0；CSRedis 连接串格式）。
+      WebConfig__RedisServerUrl: 127.0.0.1:6379,defaultDatabase=1
+      # 5) LineUp 图片标记存储指向可写卷（容器根文件系统 read_only，
+      #    LineUpImageStorage 默认 /app/App_Data/LineUp 会在 ctor CreateDirectory 时炸 503）。
+      WebConfig__LineUp__StorageRoot: /app/Uploads/LineUpImages
+      # 6) GRAPH 工作区导入源文件同理（LineUpImportStorage 默认 /app/App_Data/lineup-imports）。
+      WebConfig__LineUp__ImportRoot: /app/Uploads/lineup-imports
+      # 4) 两个库都指向 hsjm_ai_new_test，与正式业务数据完全隔离。
+      #    ⚠️ DBList 嵌在 appsettings.json 的 "WebConfig" 节下，env 覆盖必须带 WebConfig__ 前缀
+      #    （漏前缀会静默失效回退镜像内正式库配置——2026-09-04 踩过）。
+      #    索引对应 DBList 顺序：0=DefultDataBase1(业务)，1=DefultDataBase(Hangfire/元数据)。
+      WebConfig__DBList__0__ConnectionString: "${HSJM_DB_CONNECTION_0:?Set HSJM_DB_CONNECTION_0 in the environment}"
+      WebConfig__DBList__1__ConnectionString: "${HSJM_DB_CONNECTION_1:?Set HSJM_DB_CONNECTION_1 in the environment}"
+      # 7) LineUp 实时监控闸门（2026-09-11 固化）：LineUpMonitorRuntimeGate 只认
+      #    WebConfig:LineUpMonitor:Enabled，缺省 false 且完全静默（SetMonitoring 抛
+      #    LineUpMonitorDisabled、后台轮询服务不启动、LoadEnabledAsync 直接返回空——
+      #    零日志零事件，页面只剩静态定义图）。容器重建丢该变量是监控无数据的已知根因，
+      #    故在模板固化，避免每次重建靠手动 -e/.env 补。
+      WebConfig__LineUpMonitor__Enabled: "true"
+      # 上传后的约束生成固定走 XMLV2 新方法（无开关）。XMLV2 读写复用上方测试库连接，
+      # 且在打开连接前强制核对数据库名以 _test 结尾。
+      TestConstraintV2__ManualModeReadEnabled: "true"
+      IndependentPlcPipeline__Enabled: "true"
+      IndependentPlcPipeline__ExpectedDatabase: "hsjm_ai_new_test"
+      # ================================================================
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777
+    volumes:
+      - api-logs:/app/logs
+      - api-wwwroot:/app/wwwroot
+      - api-uploads:/app/Uploads
+      - api-parser-templates:/app/ParserTemplates
+      - api-generated:/app/GeneratedParsers
+    # 测试版用 /live（纯进程存活）而非 /health（要求 PG+Redis 全绿）：
+    # 6.75 上的共享 hsjm-redis 处于 OOM 崩溃循环，/health 会周期性 503，
+    # 将触发 start.sh 的 unhealthy 快速失败逻辑误判部署失败。
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:${HSJM_HTTP_PORT:?start.sh selects a free host port}/live >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 8
+    logging: *default-logging
+
+volumes:
+  api-logs:
+  api-wwwroot:
+  api-uploads:
+  api-parser-templates:
+  api-generated:

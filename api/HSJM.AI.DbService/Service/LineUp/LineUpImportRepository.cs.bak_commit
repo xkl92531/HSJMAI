@@ -1,0 +1,1288 @@
+using HSJM.AI.Core;
+using HSJM.AI.IDbService;
+using HSJM.AI.IDbService.LineUp;
+using SqlSugar;
+using System.Linq.Expressions;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace HSJM.AI.DbService.Service.LineUp;
+
+public sealed class LineUpImportRepository(ISqlSugarClient db) : ILineUpImportRepository, IAutoInject
+{
+    /// <summary>
+    /// 批次表手写 SQL 查询的行绑定类型（无参构造 class；SqlSugar 对 record 投影绑定不稳定，见 GetBatchAsync 注释）
+    /// </summary>
+    private sealed class LineUpImportBatchRow
+    {
+        public long Id { get; set; }
+        public string StoredFilePath { get; set; } = string.Empty;
+        public string SourceFileName { get; set; } = string.Empty;
+        public string SourceFileHash { get; set; } = string.Empty;
+        public long LineId { get; set; }
+        public long DeviceId { get; set; }
+        public long? PlcProjectId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? ErrorSummary { get; set; }
+        public string? ParsingLeaseToken { get; set; }
+        public DateTime? ParsingLeaseExpiresAt { get; set; }
+        public int PreviewSchemaVersion { get; set; }
+        public int PreviewRevision { get; set; }
+        public string? PreviewHash { get; set; }
+        public string? PreviewJson { get; set; }
+        public string? SummaryJson { get; set; }
+        public string? CommitRequestHash { get; set; }
+        public string? CommitReceiptJson { get; set; }
+        public string? CommitMode { get; set; }
+        public DateTime? CommittedAt { get; set; }
+
+        public LineUpImportBatchData ToData() => new(
+            Id, StoredFilePath, SourceFileName, SourceFileHash,
+            LineId, DeviceId, PlcProjectId, Status, ErrorSummary,
+            ParsingLeaseToken, ParsingLeaseExpiresAt,
+            PreviewSchemaVersion, PreviewRevision, PreviewHash,
+            PreviewJson, SummaryJson, CommitRequestHash,
+            CommitReceiptJson, CommitMode, CommittedAt);
+    }
+
+    public async Task CreateBatchAsync(LineUpImportBatchCreate request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var entity = new LineUpImportBatchEntity
+        {
+            Id = request.BatchId,
+            StoredFilePath = request.StorageKey,
+            SourceFileName = request.SourceFileName,
+            SourceFileHash = request.SourceFileHash,
+            LineId = request.LineId,
+            DeviceId = request.DeviceId,
+            Status = "Uploaded",
+            PreviewSchemaVersion = 0,
+            PreviewRevision = 0,
+            IsDeleted = false,
+            CreateTime = DateTime.UtcNow
+        };
+        try
+        {
+            await db.Insertable(entity).ExecuteCommandAsync();
+        }
+        catch (Exception)
+        {
+            var generated = db.Insertable(entity).ToSql();
+            Console.WriteLine("[INSERT-PARAM] " + generated.Key);
+            Console.WriteLine("[INSERT-PARS] " + string.Join(" | ", generated.Value.Select(p => p.ParameterName + "=" + (p.Value?.ToString() ?? "NULL"))));
+            throw;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    public async Task<bool> FailUploadAsync(
+        long batchId,
+        string safeErrorCode,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // SqlSugar Updateable 在引号列名（PG 大小写保留表）下生成非法 SQL（42601/二次引号），改手写 SQL
+        var affected = await db.Ado.ExecuteCommandAsync(
+            """
+            UPDATE "AI_LineUp_ImportBatch"
+            SET "Status" = 'Failed', "ErrorSummary" = @ErrorCode, "ModifyTime" = @Now
+            WHERE "IsDeleted" = FALSE AND "Id" = @BatchId AND "Status" = 'Uploaded'
+            """,
+            new SugarParameter("@ErrorCode", safeErrorCode),
+            new SugarParameter("@Now", DateTime.UtcNow),
+            new SugarParameter("@BatchId", batchId));
+        cancellationToken.ThrowIfCancellationRequested();
+        return affected == 1;
+    }
+
+    public async Task<LineUpImportBatchData?> GetBatchAsync(
+        long batchId,
+        CancellationToken cancellationToken)
+    {
+        // SqlSugar 对 record 投影的 DataReader 绑定不稳定（无参构造缺失 → ArgumentNullException），
+        // 与引号列名叠加时必炸：改手写 SQL + class 绑定（已实验验证的可靠路径）
+        var rows = await db.Ado.SqlQueryAsync<LineUpImportBatchRow>(
+            """
+            SELECT "Id", "StoredFilePath", "SourceFileName", "SourceFileHash",
+                   "LineId", "DeviceId", "PlcProjectId", "Status", "ErrorSummary",
+                   "ParsingLeaseToken", "ParsingLeaseExpiresAt",
+                   "PreviewSchemaVersion", "PreviewRevision", "PreviewHash",
+                   "PreviewJson"::text AS "PreviewJson", "SummaryJson"::text AS "SummaryJson", "CommitRequestHash",
+                   "CommitReceiptJson"::text AS "CommitReceiptJson", "CommitMode", "CommittedAt"
+            FROM "AI_LineUp_ImportBatch"
+            WHERE "IsDeleted" = FALSE AND "Id" = @BatchId
+            """,
+            new SugarParameter[] { new("@BatchId", batchId) });
+        return rows.Count == 1 ? rows[0].ToData() : null;
+    }
+
+    public async Task<LineUpImportBatchData?> TryAcquireParsingLeaseAsync(
+        long batchId,
+        string leaseToken,
+        DateTime now,
+        DateTime expiresAt,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(leaseToken) || expiresAt <= now)
+        {
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        // SqlSugar Updateable 在引号列名（PG 大小写保留表）下生成非法 SQL（42601/二次引号），改手写 SQL
+        var affected = await db.Ado.ExecuteCommandAsync(
+            """
+            UPDATE "AI_LineUp_ImportBatch"
+            SET "Status" = 'Parsing', "ParsingLeaseToken" = @LeaseToken,
+                "ParsingLeaseExpiresAt" = @ExpiresAt, "ErrorSummary" = NULL, "ModifyTime" = @Now
+            WHERE "IsDeleted" = FALSE AND "Id" = @BatchId
+              AND ("Status" = 'Uploaded'
+                   OR ("Status" = 'Parsing' AND "ParsingLeaseExpiresAt" IS NOT NULL
+                       AND "ParsingLeaseExpiresAt" <= @Now))
+            """,
+            new SugarParameter("@LeaseToken", leaseToken),
+            new SugarParameter("@ExpiresAt", expiresAt),
+            new SugarParameter("@Now", now),
+            new SugarParameter("@BatchId", batchId));
+        cancellationToken.ThrowIfCancellationRequested();
+        if (affected != 1)
+        {
+            return null;
+        }
+
+        // 同 GetBatchAsync：record 投影绑定不可靠，手写 SQL + class 绑定
+        var rows = await db.Ado.SqlQueryAsync<LineUpImportBatchRow>(
+            """
+            SELECT "Id", "StoredFilePath", "SourceFileName", "SourceFileHash",
+                   "LineId", "DeviceId", "PlcProjectId", "Status", "ErrorSummary",
+                   "ParsingLeaseToken", "ParsingLeaseExpiresAt",
+                   "PreviewSchemaVersion", "PreviewRevision", "PreviewHash",
+                   "PreviewJson"::text AS "PreviewJson", "SummaryJson"::text AS "SummaryJson", "CommitRequestHash",
+                   "CommitReceiptJson"::text AS "CommitReceiptJson", "CommitMode", "CommittedAt"
+            FROM "AI_LineUp_ImportBatch"
+            WHERE "IsDeleted" = FALSE AND "Id" = @BatchId AND "Status" = 'Parsing'
+              AND "ParsingLeaseToken" = @LeaseToken
+            """,
+            new SugarParameter[] { new("@BatchId", batchId), new("@LeaseToken", leaseToken) });
+        return rows.Count == 1 ? rows[0].ToData() : null;
+    }
+
+    public async Task<bool> CompletePreviewAsync(
+        LineUpImportPreviewCompletion completion,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        db.Ado.BeginTran();
+        try
+        {
+            var now = DateTime.UtcNow;
+            // SqlSugar Updateable 在引号列名（PG 大小写保留表）下生成非法 SQL（42601/二次引号），改手写 SQL；
+            // jsonb 列用显式 ::jsonb 转换避免 Npgsql 42804
+            var affected = await db.Ado.ExecuteCommandAsync(
+                """
+                UPDATE "AI_LineUp_ImportBatch"
+                SET "Status" = 'PreviewReady',
+                    "PreviewSchemaVersion" = @SchemaVersion,
+                    "PreviewRevision" = "PreviewRevision" + 1,
+                    "PreviewJson" = @PreviewJson::jsonb,
+                    -- jsonb 列存储会规范化 JSON 文本（键重排/空格），读回文本 != 写入文本，
+                    -- 因此 hash 必须由 PG 对规范化文本计算（与 C# 读回 ::text 重算结果一致），否则 GetPreviewAsync 自校验必失败
+                    "PreviewHash" = encode(sha256(CONVERT_TO(@PreviewJson::jsonb::text, 'UTF8')), 'hex'),
+                    "SummaryJson" = @SummaryJson::jsonb,
+                    "PlcProjectId" = @PlcProjectId::bigint,
+                    "ParsingLeaseToken" = NULL,
+                    "ParsingLeaseExpiresAt" = NULL,
+                    "ErrorSummary" = NULL,
+                    "ModifyTime" = @Now
+                WHERE "IsDeleted" = FALSE AND "Id" = @BatchId
+                  AND "Status" = 'Parsing' AND "ParsingLeaseToken" = @LeaseToken
+                """,
+                new SugarParameter("@SchemaVersion", completion.PreviewSchemaVersion),
+                new SugarParameter("@PreviewJson", (object?)completion.PreviewJson ?? DBNull.Value),
+                new SugarParameter("@SummaryJson", (object?)completion.SummaryJson ?? DBNull.Value),
+                new SugarParameter("@PlcProjectId", completion.PlcProjectId.HasValue ? completion.PlcProjectId.Value : DBNull.Value),
+                new SugarParameter("@Now", now),
+                new SugarParameter("@BatchId", completion.BatchId),
+                new SugarParameter("@LeaseToken", completion.LeaseToken));
+            cancellationToken.ThrowIfCancellationRequested();
+            if (affected != 1)
+            {
+                db.Ado.RollbackTran();
+                return false;
+            }
+
+            await db.Ado.ExecuteCommandAsync(
+                """
+                UPDATE "AI_LineUp_ImportIssue"
+                SET "IsDeleted" = TRUE, "ModifyTime" = @Now
+                WHERE "IsDeleted" = FALSE AND "ImportBatchId" = @BatchId
+                """,
+                new SugarParameter("@Now", now),
+                new SugarParameter("@BatchId", completion.BatchId));
+            if (completion.Issues.Count > 0)
+            {
+                var issueRows = completion.Issues.Select(issue => new LineUpImportIssueEntity
+                {
+                    ImportBatchId = completion.BatchId,
+                    Severity = issue.Severity,
+                    IssueType = issue.IssueType,
+                    SourceKey = issue.SourceKey,
+                    Message = issue.Message,
+                    ResolutionJson = issue.ResolutionJson,
+                    IsDeleted = false,
+                    CreateTime = now
+                }).ToArray();
+                await db.Insertable(issueRows).ExecuteCommandAsync();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            db.Ado.CommitTran();
+            return true;
+        }
+        catch
+        {
+            db.Ado.RollbackTran();
+            throw;
+        }
+    }
+
+    public async Task<bool> FailParsingAsync(
+        long batchId,
+        string leaseToken,
+        string safeErrorCode,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // SqlSugar Updateable 在引号列名（PG 大小写保留表）下生成非法 SQL（42601/二次引号），改手写 SQL
+        var affected = await db.Ado.ExecuteCommandAsync(
+            """
+            UPDATE "AI_LineUp_ImportBatch"
+            SET "Status" = 'Failed', "ErrorSummary" = @ErrorCode,
+                "ParsingLeaseToken" = NULL, "ParsingLeaseExpiresAt" = NULL, "ModifyTime" = @Now
+            WHERE "IsDeleted" = FALSE AND "Id" = @BatchId AND "Status" = 'Parsing'
+              AND "ParsingLeaseToken" = @LeaseToken
+            """,
+            new SugarParameter("@ErrorCode", safeErrorCode),
+            new SugarParameter("@Now", DateTime.UtcNow),
+            new SugarParameter("@BatchId", batchId),
+            new SugarParameter("@LeaseToken", leaseToken));
+        cancellationToken.ThrowIfCancellationRequested();
+        return affected == 1;
+    }
+
+    public async Task<LineUpExistingGraphState> LoadExistingGraphStateAsync(
+        IReadOnlyCollection<long> plcProjectIds,
+        IReadOnlyCollection<long> graphBlockIds,
+        IReadOnlyCollection<string> incomingSequenceSourceKeys,
+        CancellationToken cancellationToken)
+    {
+        var projectIds = plcProjectIds.Where(x => x > 0).Distinct().ToArray();
+        var blockIds = graphBlockIds.Where(x => x > 0).Distinct().ToArray();
+        var sourceKeys = incomingSequenceSourceKeys
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToArray();
+        if (projectIds.Length == 0)
+        {
+            return EmptyGraphState();
+        }
+
+        // SqlSugar Queryable 的 Contains/可空转换表达式翻译在此环境炸 op_Implicit，改手写 SQL 绑回同一实体
+        static SugarParameter[] IdParams(string prefix, IReadOnlyCollection<long> ids) =>
+            ids.Select((value, index) => new SugarParameter($"@{prefix}{index}", value)).ToArray();
+        const char Q = (char)34;
+        static string ParamList(IEnumerable<SugarParameter> ps) =>
+            string.Join(", ", ps.Select(p => p.ParameterName));
+
+        var pidParams = IdParams("sp", projectIds);
+        var pidList = ParamList(pidParams);
+        var seqFilter = $"{Q}IsDeleted{Q} = FALSE AND {Q}PlcProjectId{Q} IN ({pidList})";
+        var extraParams = new List<SugarParameter>(pidParams);
+        if (blockIds.Length > 0 && sourceKeys.Length > 0)
+        {
+            var bp = IdParams("sb", blockIds);
+            var kp = sourceKeys.Select((v, i) => new SugarParameter($"@sk{i}", v)).ToArray();
+            seqFilter += $" AND ({Q}GraphBlockId{Q} IN ({ParamList(bp)}) OR {Q}SourceKey{Q} IN ({ParamList(kp)}))";
+            extraParams.AddRange(bp);
+            extraParams.AddRange(kp);
+        }
+        else if (blockIds.Length > 0)
+        {
+            var bp = IdParams("sb", blockIds);
+            seqFilter += $" AND {Q}GraphBlockId{Q} IN ({ParamList(bp)})";
+            extraParams.AddRange(bp);
+        }
+        else if (sourceKeys.Length > 0)
+        {
+            var kp = sourceKeys.Select((v, i) => new SugarParameter($"@sk{i}", v)).ToArray();
+            seqFilter += $" AND {Q}SourceKey{Q} IN ({ParamList(kp)})";
+            extraParams.AddRange(kp);
+        }
+        else
+        {
+            return EmptyGraphState();
+        }
+
+        var sequenceRows = await db.Ado.SqlQueryAsync<LineUpGraphSequenceEntity>(
+                $"SELECT * FROM {Q}AI_LineUp_GraphSequence{Q} WHERE {seqFilter}",
+                extraParams.ToArray())
+            .WaitAsync(cancellationToken);
+        var sequenceIds = sequenceRows.Select(x => x.Id).Distinct().ToArray();
+        if (sequenceIds.Length == 0)
+        {
+            return EmptyGraphState();
+        }
+
+        var sidParams = IdParams("ss", sequenceIds);
+        var sidList = ParamList(sidParams);
+        var stepRows = await db.Ado.SqlQueryAsync<LineUpGraphStepEntity>(
+                $"SELECT * FROM {Q}AI_LineUp_GraphStep{Q} WHERE {Q}IsDeleted{Q} = FALSE AND {Q}SequenceId{Q} IN ({sidList})",
+                sidParams)
+            .WaitAsync(cancellationToken);
+        var transitionRows = await db.Ado.SqlQueryAsync<LineUpGraphTransitionEntity>(
+                $"SELECT * FROM {Q}AI_LineUp_GraphTransition{Q} WHERE {Q}IsDeleted{Q} = FALSE AND {Q}SequenceId{Q} IN ({sidList})",
+                sidParams)
+            .WaitAsync(cancellationToken);
+        var stepIds = stepRows.Select(x => x.Id).Distinct().ToArray();
+        IReadOnlyList<LineUpGraphActionEntity> actionRows;
+        if (stepIds.Length == 0)
+        {
+            actionRows = [];
+        }
+        else
+        {
+            var stp = IdParams("sa", stepIds);
+            actionRows = await db.Ado.SqlQueryAsync<LineUpGraphActionEntity>(
+                    $"SELECT * FROM {Q}AI_LineUp_GraphAction{Q} WHERE {Q}IsDeleted{Q} = FALSE AND {Q}StepId{Q} IN ({ParamList(stp)})",
+                    stp)
+                .WaitAsync(cancellationToken);
+        }
+
+        var edgeRows = await db.Ado.SqlQueryAsync<LineUpGraphEdgeEntity>(
+                $"SELECT * FROM {Q}AI_LineUp_GraphEdge{Q} WHERE {Q}IsDeleted{Q} = FALSE AND {Q}SequenceId{Q} IN ({sidList})",
+                sidParams)
+            .WaitAsync(cancellationToken);
+        var bindingRows = await db.Ado.SqlQueryAsync<LineUpSubStationGraphBindingEntity>(
+                $"SELECT * FROM {Q}AI_LineUp_SubStationGraphBinding{Q} WHERE {Q}IsDeleted{Q} = FALSE AND {Q}SequenceId{Q} IN ({sidList})",
+                sidParams)
+            .WaitAsync(cancellationToken);
+
+        var orderedSequenceRows = sequenceRows.OrderBy(x => x.PlcProjectId).ThenBy(x => x.GraphBlockId)
+            .ThenBy(x => x.SourceKey, StringComparer.Ordinal).ToArray();
+        var orderedStepRows = stepRows.OrderBy(x => x.SequenceId).ThenBy(x => x.SourceKey, StringComparer.Ordinal).ToArray();
+        var orderedTransitionRows = transitionRows.OrderBy(x => x.SequenceId).ThenBy(x => x.SourceKey, StringComparer.Ordinal).ToArray();
+        var orderedActionRows = actionRows.OrderBy(x => x.StepId).ThenBy(x => x.SourceKey, StringComparer.Ordinal).ToArray();
+        var orderedEdgeRows = edgeRows.OrderBy(x => x.SequenceId).ThenBy(x => x.SourceKey, StringComparer.Ordinal).ToArray();
+        var orderedBindingRows = bindingRows.OrderBy(x => x.LineId).ThenBy(x => x.DeviceId).ThenBy(x => x.SequenceId).ToArray();
+        var hashMaterial = string.Join("\n",
+            orderedSequenceRows.Select(x =>
+                    $"S|{x.Id}|{x.PlcProjectId}|{x.GraphBlockId}|{x.InstanceDbBlockId}|{x.SourceKey}|" +
+                    $"{x.SourceName}|{x.DisplayName}|{x.LayoutJson}|{x.SourceHash}")
+                .Concat(orderedStepRows.Select(x =>
+                    $"NS|{x.Id}|{x.SequenceId}|{x.SourceKey}|{x.SourceName}|{x.DisplayName}|{x.StepNumber}|" +
+                    $"{x.IsInitial}|{x.IsFinal}|{x.IsSafety}|{x.Comment}|{x.SourceVariablePath}|{x.BlockInterfaceId}|" +
+                    $"{x.MaximumStepTime}|{x.WarningTime}"))
+                .Concat(orderedTransitionRows.Select(x =>
+                    $"NT|{x.Id}|{x.SequenceId}|{x.SourceKey}|{x.SourceName}|{x.DisplayName}|{x.TransitionNumber}|" +
+                    $"{x.ConditionExpression}|{x.ConditionTokensJson}|{x.SourceVariablePath}|{x.BlockInterfaceId}|" +
+                    $"{x.IsJump}|{x.ProgrammingLanguage}|{x.IsMissing}"))
+                .Concat(orderedActionRows.Select(x =>
+                    $"A|{x.Id}|{x.StepId}|{x.SourceKey}|{x.SourceName}|{x.DisplayName}|{x.Qualifier}|" +
+                    $"{x.ActionCode}|{x.CallBlockName}|{x.ExecuteTime}|{x.Ordinal}|{x.TokensJson}|{x.ActionText}"))
+                .Concat(orderedEdgeRows.Select(x =>
+                    $"E|{x.Id}|{x.SequenceId}|{x.SourceKey}|{x.FromNodeType}|{x.FromNodeId}|" +
+                    $"{x.ToNodeType}|{x.ToNodeId}|{x.EdgeKind}|{x.BranchOrder}"))
+                .Concat(orderedBindingRows.Select(x =>
+                    $"B|{x.Id}|{x.LineId}|{x.ProcessId}|{x.StationId}|{x.SubStationId}|{x.DeviceId}|" +
+                    $"{x.SequenceId}|{x.PlcProjectId}|{x.GraphBlockId}|{x.InstanceDbBlockId}|" +
+                    $"{x.RuntimeBindingJson}|{x.BindingStatus}|{x.LastValidatedAt:O}")));
+        var stateHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashMaterial))).ToLowerInvariant();
+        var orderedSequences = orderedSequenceRows.Select(x => new LineUpExistingSequenceState(
+            x.Id, x.PlcProjectId, x.GraphBlockId, x.SourceKey, x.DisplayName, x.LayoutJson)).ToArray();
+        var nodes = orderedStepRows.Select(x => new LineUpExistingNodeState(
+                x.Id, x.SequenceId, "Step", x.SourceKey, x.DisplayName))
+            .Concat(orderedTransitionRows.Select(x => new LineUpExistingNodeState(
+                x.Id, x.SequenceId, "Transition", x.SourceKey, x.DisplayName))).ToArray();
+        var orderedActions = orderedActionRows.Select(x => new LineUpExistingActionState(
+            x.Id, x.StepId, x.SourceKey, x.DisplayName)).ToArray();
+        var orderedEdges = orderedEdgeRows.Select(x => new LineUpExistingEdgeState(
+            x.Id, x.SequenceId, x.SourceKey)).ToArray();
+        var orderedBindings = orderedBindingRows.Select(x => new LineUpExistingBindingState(
+            x.Id, x.LineId, x.DeviceId, x.SequenceId, x.PlcProjectId, x.GraphBlockId, x.BindingStatus)).ToArray();
+        return new(stateHash, orderedSequences, nodes, orderedActions, orderedEdges, orderedBindings);
+    }
+
+    public async Task<LineUpCommitPersistenceOutcome> CommitAsync(
+        LineUpCommitPersistencePlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (!string.Equals(plan.CommitMode, "StructureOnly", StringComparison.Ordinal) ||
+            plan.BatchId <= 0 || plan.LineId <= 0 || plan.DeviceId <= 0 ||
+            plan.Documents.Count == 0 || string.IsNullOrWhiteSpace(plan.ExpectedPreviewHash) ||
+            string.IsNullOrWhiteSpace(plan.ExpectedGraphStateHash) ||
+            string.IsNullOrWhiteSpace(plan.DiffToken) ||
+            string.IsNullOrWhiteSpace(plan.CommitRequestHash) ||
+            string.IsNullOrWhiteSpace(plan.CommitReceiptJson) ||
+            plan.Documents.SelectMany(x => x.Sequences).Any(x =>
+                !string.Equals(x.BindingStatus, "Unresolved", StringComparison.Ordinal) &&
+                !string.Equals(x.BindingStatus, "NeedsReview", StringComparison.Ordinal)))
+        {
+            throw CommitError("CommitPlanInvalid", "The internal Phase 1 commit plan is invalid.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        db.Ado.BeginTran();
+        try
+        {
+            var guarded = await db.Updateable<LineUpImportBatchEntity>()
+                .SetColumns(x => x.ModifyTime == x.ModifyTime)
+                .Where(x => !x.IsDeleted && x.Id == plan.BatchId && x.Status == "PreviewReady" &&
+                            x.LineId == plan.LineId && x.DeviceId == plan.DeviceId &&
+                            x.PreviewSchemaVersion == plan.ExpectedPreviewSchemaVersion &&
+                            x.PreviewRevision == plan.ExpectedPreviewRevision &&
+                            x.PreviewHash == plan.ExpectedPreviewHash)
+                .ExecuteCommandAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (guarded != 1)
+            {
+                var existing = await GetBatchAsync(plan.BatchId, cancellationToken);
+                if (existing is not null &&
+                    string.Equals(existing.Status, "Committed", StringComparison.Ordinal) &&
+                    string.Equals(existing.CommitRequestHash, plan.CommitRequestHash, StringComparison.Ordinal) &&
+                    !string.IsNullOrWhiteSpace(existing.CommitReceiptJson))
+                {
+                    db.Ado.CommitTran();
+                    return new(true, existing.CommitReceiptJson);
+                }
+
+                throw CommitError("PreviewStale", "The import batch no longer matches the committed preview.");
+            }
+
+            var allSequences = plan.Documents.SelectMany(x => x.Sequences).ToArray();
+            var projectIds = plan.Documents.Select(x => x.PlcProjectId).Distinct().ToArray();
+            var graphBlockIds = plan.Documents.Select(x => x.GraphBlockId).Distinct().ToArray();
+            var sourceKeys = allSequences.Select(x => x.SourceKey).Distinct(StringComparer.Ordinal).ToArray();
+            await LockCommitOwnersAsync(plan, allSequences, cancellationToken);
+            var hierarchy = await LoadHierarchyContextAsync(plan, allSequences, cancellationToken);
+            var state = await LoadExistingGraphStateAsync(
+                projectIds, graphBlockIds, sourceKeys, cancellationToken);
+            if (!string.Equals(state.StateHash, plan.ExpectedGraphStateHash, StringComparison.Ordinal))
+            {
+                throw CommitError("PreviewStale", "The persisted GRAPH changed before the transaction acquired its owner locks.");
+            }
+
+            var desiredSequences = new Dictionary<(long ProjectId, long GraphBlockId, string SourceKey), long>();
+            foreach (var document in plan.Documents
+                         .OrderBy(x => x.PlcProjectId)
+                         .ThenBy(x => x.GraphBlockId)
+                         .ThenBy(x => x.SourceHash, StringComparer.Ordinal))
+            {
+                foreach (var sequence in document.Sequences.OrderBy(x => x.SourceKey, StringComparer.Ordinal))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var subStationId = await ResolveSubStationIdAsync(
+                        plan, sequence, hierarchy, cancellationToken);
+                    var sequenceId = await UpsertSequenceAsync(document, sequence, cancellationToken);
+                    await UpsertSequenceChildrenAsync(sequenceId, sequence, cancellationToken);
+                    await UpsertBindingAsync(
+                        plan, document, sequence, sequenceId, subStationId, cancellationToken);
+                    if (!desiredSequences.TryAdd(
+                            (document.PlcProjectId, document.GraphBlockId, sequence.SourceKey),
+                            sequenceId))
+                    {
+                        throw CommitError("DuplicateSourceKey", "A Sequence source key is duplicated in the commit plan.");
+                    }
+                }
+            }
+
+            await SoftDeleteRemovedSequencesAsync(plan.Documents, desiredSequences, cancellationToken);
+            var completed = await db.Updateable<LineUpImportBatchEntity>()
+                .SetColumns(x => new LineUpImportBatchEntity
+                {
+                    Status = "Committed",
+                    CommitMode = plan.CommitMode,
+                    CommitRequestHash = plan.CommitRequestHash,
+                    CommitReceiptJson = plan.CommitReceiptJson,
+                    CommittedAt = plan.CommittedAt,
+                    ErrorSummary = null,
+                    ModifyTime = plan.CommittedAt
+                })
+                .Where(x => !x.IsDeleted && x.Id == plan.BatchId && x.Status == "PreviewReady" &&
+                            x.PreviewSchemaVersion == plan.ExpectedPreviewSchemaVersion &&
+                            x.PreviewRevision == plan.ExpectedPreviewRevision &&
+                            x.PreviewHash == plan.ExpectedPreviewHash)
+                .ExecuteCommandAsync();
+            if (completed != 1)
+            {
+                throw CommitError("PreviewStale", "The import batch changed during commit.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            db.Ado.CommitTran();
+            return new(false, plan.CommitReceiptJson);
+        }
+        catch
+        {
+            db.Ado.RollbackTran();
+            throw;
+        }
+    }
+
+    private async Task LockCommitOwnersAsync(
+        LineUpCommitPersistencePlan plan,
+        IReadOnlyCollection<LineUpCommitSequenceWrite> sequences,
+        CancellationToken cancellationToken)
+    {
+        var projectIds = plan.Documents.Select(x => x.PlcProjectId).Distinct().ToArray();
+        var graphBlockIds = plan.Documents.Select(x => x.GraphBlockId).Distinct().ToArray();
+        var instanceDbIds = plan.Documents.Where(x => x.InstanceDbBlockId is > 0)
+            .Select(x => x.InstanceDbBlockId!.Value).Distinct().ToArray();
+        var blockIds = graphBlockIds.Concat(instanceDbIds).Distinct().ToArray();
+        var processIds = sequences.Select(x => x.ProcessId).Distinct().ToArray();
+        var stationIds = sequences.Select(x => x.StationId).Distinct().ToArray();
+        var subStationIds = sequences.Where(x => x.SubStationId is > 0)
+            .Select(x => x.SubStationId!.Value).Distinct().ToArray();
+
+        var lockedLines = await db.Updateable<LineUpProductionLineEntity>()
+            .SetColumns(x => x.ModifyTime == x.ModifyTime)
+            .Where(x => !x.IsDeleted && x.Id == plan.LineId)
+            .ExecuteCommandAsync();
+        var lockedDevices = await db.Updateable<LineUpDeviceEntity>()
+            .SetColumns(x => x.ModifyTime == x.ModifyTime)
+            .Where(x => !x.IsDeleted && x.Id == plan.DeviceId && x.LineID == plan.LineId)
+            .ExecuteCommandAsync();
+        var lockedProjects = await db.Updateable<PLC_ProjectEntity>()
+            .SetColumns(x => x.ModifyTime == x.ModifyTime)
+            .Where(x => !x.IsDeleted && projectIds.Contains(x.Id))
+            .ExecuteCommandAsync();
+        if (lockedLines != 1 || lockedDevices != 1 || lockedProjects != projectIds.Length)
+        {
+            throw CommitError("GraphOwnerMissing", "The selected line, device, or PLC project is no longer available.");
+        }
+
+        if (graphBlockIds.Length > 0)
+        {
+            var lockedBlocks = await db.Updateable<PLC_BlockEntity>()
+                .SetColumns(x => x.ModifyTime == x.ModifyTime)
+                .Where(x => !x.IsDeleted && blockIds.Contains(x.Id))
+                .ExecuteCommandAsync();
+            if (lockedBlocks != blockIds.Length)
+            {
+                throw CommitError("GraphOwnerMissing", "A selected GRAPH or InstanceDB block is no longer available.");
+            }
+
+            var blocks = await db.Queryable<PLC_BlockEntity>()
+                .Where(x => !x.IsDeleted && blockIds.Contains(x.Id))
+                .ToListAsync(cancellationToken);
+            foreach (var document in plan.Documents)
+            {
+                var graph = blocks.SingleOrDefault(x => x.Id == document.GraphBlockId);
+                if (graph is null || graph.ProjectId != document.PlcProjectId ||
+                    !string.Equals(graph.BlockType?.Trim(), "FB", StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(graph.ProgrammingLanguage?.Trim(), "GRAPH", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw CommitError("GraphOwnerMissing", "The selected GRAPH block owner or type changed.");
+                }
+
+                if (document.InstanceDbBlockId is > 0)
+                {
+                    var instanceDb = blocks.SingleOrDefault(x => x.Id == document.InstanceDbBlockId.Value);
+                    if (instanceDb is null || instanceDb.ProjectId != document.PlcProjectId ||
+                        !string.Equals(instanceDb.BlockType?.Trim(), "InstanceDB", StringComparison.OrdinalIgnoreCase) ||
+                        !string.Equals(instanceDb.ProgrammingLanguage?.Trim(), "DB", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw CommitError("GraphOwnerMissing", "The selected InstanceDB owner or type changed.");
+                    }
+                }
+            }
+        }
+
+        var lockedProcesses = await db.Updateable<LineUpProcessEntity>()
+            .SetColumns(x => x.ModifyTime == x.ModifyTime)
+            .Where(x => !x.IsDeleted && processIds.Contains(x.Id))
+            .ExecuteCommandAsync();
+
+        if (stationIds.Length > 0)
+        {
+            var lockedStations = await db.Updateable<LineUpWorkStationEntity>()
+                .SetColumns(x => x.ModifyTime == x.ModifyTime)
+                .Where(x => !x.IsDeleted && stationIds.Contains(x.Id))
+                .ExecuteCommandAsync();
+            if (lockedStations != stationIds.Length)
+            {
+                throw CommitError("HierarchyOwnerMissing", "A selected work station is no longer available.");
+            }
+        }
+
+
+        var lockedSubstations = subStationIds.Length == 0
+            ? 0
+            : await db.Updateable<LineUpSubStationEntity>()
+                .SetColumns(x => x.ModifyTime == x.ModifyTime)
+                .Where(x => !x.IsDeleted && subStationIds.Contains(x.Id))
+                .ExecuteCommandAsync();
+        if (lockedProcesses != processIds.Length || lockedSubstations != subStationIds.Length)
+        {
+            throw CommitError("HierarchyOwnerMissing", "A selected process or substation is no longer available.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private async Task<CommitHierarchyContext> LoadHierarchyContextAsync(
+        LineUpCommitPersistencePlan plan,
+        IReadOnlyCollection<LineUpCommitSequenceWrite> sequences,
+        CancellationToken cancellationToken)
+    {
+        var lines = await db.Queryable<LineUpProductionLineEntity>()
+            .Where(x => !x.IsDeleted && x.Id == plan.LineId)
+            .ToListAsync(cancellationToken);
+        var devices = await db.Queryable<LineUpDeviceEntity>()
+            .Where(x => !x.IsDeleted && x.Id == plan.DeviceId && x.LineID == plan.LineId)
+            .ToListAsync(cancellationToken);
+        var processIds = sequences.Select(x => x.ProcessId).Distinct().ToArray();
+        var stationIds = sequences.Select(x => x.StationId).Distinct().ToArray();
+        var subStationIds = sequences.Where(x => x.SubStationId is > 0)
+            .Select(x => x.SubStationId!.Value).Distinct().ToArray();
+        var processes = await db.Queryable<LineUpProcessEntity>()
+            .Where(x => !x.IsDeleted && processIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        var stations = await db.Queryable<LineUpWorkStationEntity>()
+            .Where(x => !x.IsDeleted && stationIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        var substations = subStationIds.Length == 0
+            ? []
+            : await db.Queryable<LineUpSubStationEntity>()
+                .Where(x => !x.IsDeleted && subStationIds.Contains(x.Id))
+                .ToListAsync(cancellationToken);
+
+        if (lines.Count != 1 || devices.Count != 1 || processes.Count != processIds.Length ||
+            stations.Count != stationIds.Length || substations.Count != subStationIds.Length)
+        {
+            throw CommitError("HierarchyOwnerMissing", "The selected line, device, or hierarchy owner changed.");
+        }
+
+        var context = new CommitHierarchyContext(
+            lines[0], devices[0],
+            processes.ToDictionary(x => x.Id),
+            stations.ToDictionary(x => x.Id),
+            substations.ToDictionary(x => x.Id));
+        foreach (var sequence in sequences)
+        {
+            context.Validate(sequence, plan.LineId, plan.DeviceId);
+        }
+
+        return context;
+    }
+
+    private async Task<long?> ResolveSubStationIdAsync(
+        LineUpCommitPersistencePlan plan,
+        LineUpCommitSequenceWrite sequence,
+        CommitHierarchyContext hierarchy,
+        CancellationToken cancellationToken)
+    {
+        if (sequence.SubStationId is > 0)
+        {
+            return sequence.SubStationId;
+        }
+
+        if (!string.Equals(sequence.CandidateKind, "ProposedSubStation", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(sequence.ProposedSubStationCode) ||
+            string.IsNullOrWhiteSpace(sequence.ProposedSubStationName))
+        {
+            throw CommitError("HierarchyCandidateInvalid", "Only a validated proposed substation may create hierarchy data.");
+        }
+
+        var code = sequence.ProposedSubStationCode.Trim();
+        var normalizedCode = code.ToLowerInvariant();
+        var matches = await db.Queryable<LineUpSubStationEntity>()
+            .Where(x => !x.IsDeleted && x.ProductionLineID == plan.LineId &&
+                        x.WorkStationID == sequence.StationId && x.PlcID == plan.DeviceId &&
+                        x.SubStationCode != null && x.SubStationCode.Trim().ToLower() == normalizedCode)
+            .ToListAsync(cancellationToken);
+        if (matches.Count > 1)
+        {
+            throw CommitError("HierarchyCandidateAmbiguous", "The proposed substation code is no longer unique.");
+        }
+
+        if (matches.Count == 1)
+        {
+            var match = matches[0];
+            if (match.ProcessID != sequence.ProcessId)
+            {
+                throw CommitError("HierarchyCandidateStale", "The proposed substation code now belongs to another process.");
+            }
+
+            return match.Id;
+        }
+
+        var process = hierarchy.Processes[sequence.ProcessId];
+        var station = hierarchy.Stations[sequence.StationId];
+        var entity = new LineUpSubStationEntity
+        {
+            ProcessID = process.Id,
+            ProcessCode = process.Code,
+            ProcessName = process.Name,
+            WorkStationID = station.Id,
+            WorkStationCode = station.Code,
+            WorkStationName = station.Name,
+            ProductionLineID = hierarchy.Line.Id,
+            ProductionLineCode = hierarchy.Line.Code,
+            ProductionLineName = hierarchy.Line.Name,
+            PlcID = hierarchy.Device.Id,
+            PlcName = hierarchy.Device.DeviceName,
+            SubStationCode = code,
+            SubStationName = sequence.ProposedSubStationName.Trim(),
+            SubStationMode = "GRAPH",
+            IsDeleted = false,
+            CreateTime = plan.CommittedAt
+        };
+        RequireSingle(await db.Insertable(entity).ExecuteCommandAsync(),
+            "HierarchyCandidateStale", "The proposed substation could not be created exactly once.");
+        cancellationToken.ThrowIfCancellationRequested();
+        return entity.Id;
+    }
+
+    private async Task<long> UpsertSequenceAsync(
+        LineUpCommitDocumentWrite document,
+        LineUpCommitSequenceWrite sequence,
+        CancellationToken cancellationToken)
+    {
+        var matches = await db.Queryable<LineUpGraphSequenceEntity>()
+            .Where(x => !x.IsDeleted && x.PlcProjectId == document.PlcProjectId &&
+                        x.SourceKey == sequence.SourceKey)
+            .ToListAsync(cancellationToken);
+        if (matches.Count > 1)
+        {
+            throw CommitError("DuplicateSourceKey", "The active Sequence source key is not unique.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (matches.Count == 1)
+        {
+            var current = matches[0];
+            if (current.GraphBlockId != document.GraphBlockId)
+            {
+                throw CommitError("SourceKeyOwnerConflict", "The Sequence source key belongs to another GRAPH block.");
+            }
+
+            var displayName = sequence.RequestedDisplayName ?? current.DisplayName;
+            var updated = await db.Updateable<LineUpGraphSequenceEntity>()
+                .SetColumns(x => new LineUpGraphSequenceEntity
+                {
+                    SourceName = sequence.SourceName,
+                    DisplayName = displayName,
+                    GraphBlockId = document.GraphBlockId,
+                    InstanceDbBlockId = document.InstanceDbBlockId,
+                    SourceHash = document.SourceHash,
+                    ModifyTime = now
+                })
+                .Where(x => !x.IsDeleted && x.Id == current.Id &&
+                            x.PlcProjectId == document.PlcProjectId && x.GraphBlockId == document.GraphBlockId)
+                .ExecuteCommandAsync();
+            RequireSingle(updated, "PreviewStale", "The selected Sequence changed during commit.");
+            return current.Id;
+        }
+
+        var created = new LineUpGraphSequenceEntity
+        {
+            SourceKey = sequence.SourceKey,
+            SourceName = sequence.SourceName,
+            DisplayName = sequence.RequestedDisplayName ?? sequence.InitialDisplayName,
+            PlcProjectId = document.PlcProjectId,
+            GraphBlockId = document.GraphBlockId,
+            InstanceDbBlockId = document.InstanceDbBlockId,
+            SourceHash = document.SourceHash,
+            IsDeleted = false,
+            CreateTime = now
+        };
+        RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+            "DuplicateSourceKey", "The Sequence could not be created exactly once.");
+        cancellationToken.ThrowIfCancellationRequested();
+        return created.Id;
+    }
+
+    private async Task UpsertSequenceChildrenAsync(
+        long sequenceId,
+        LineUpCommitSequenceWrite sequence,
+        CancellationToken cancellationToken)
+    {
+        var existingSteps = await db.Queryable<LineUpGraphStepEntity>()
+            .Where(x => !x.IsDeleted && x.SequenceId == sequenceId)
+            .ToListAsync(cancellationToken);
+        var existingTransitions = await db.Queryable<LineUpGraphTransitionEntity>()
+            .Where(x => !x.IsDeleted && x.SequenceId == sequenceId)
+            .ToListAsync(cancellationToken);
+        var duplicateNode = existingSteps.Select(x => x.SourceKey)
+            .Concat(existingTransitions.Select(x => x.SourceKey))
+            .GroupBy(x => x, StringComparer.Ordinal).FirstOrDefault(x => x.Count() > 1);
+        if (duplicateNode is not null)
+        {
+            throw CommitError("DuplicateSourceKey", "An active node source key is not unique inside its Sequence.");
+        }
+
+        var nodeIds = new Dictionary<(string Kind, string Key), long>();
+        foreach (var node in sequence.Nodes.OrderBy(x => x.SourceKey, StringComparer.Ordinal))
+        {
+            if (string.Equals(node.NodeKind, "Step", StringComparison.Ordinal))
+            {
+                var current = existingSteps.SingleOrDefault(x =>
+                    string.Equals(x.SourceKey, node.SourceKey, StringComparison.Ordinal));
+                var id = await UpsertStepAsync(sequenceId, node, current);
+                nodeIds.Add(("Step", node.SourceKey), id);
+            }
+            else if (string.Equals(node.NodeKind, "Transition", StringComparison.Ordinal))
+            {
+                var current = existingTransitions.SingleOrDefault(x =>
+                    string.Equals(x.SourceKey, node.SourceKey, StringComparison.Ordinal));
+                var id = await UpsertTransitionAsync(sequenceId, node, current);
+                nodeIds.Add(("Transition", node.SourceKey), id);
+            }
+            else
+            {
+                throw CommitError("GraphNodeKindInvalid", "Only Step and Transition nodes can be persisted.");
+            }
+        }
+
+        await UpsertActionsAsync(sequenceId, sequence.Actions, nodeIds, cancellationToken);
+        await UpsertEdgesAsync(sequenceId, sequence.Edges, nodeIds, cancellationToken);
+        await SoftDeleteRemovedChildrenAsync(
+            sequenceId, sequence, nodeIds, existingSteps, existingTransitions, cancellationToken);
+    }
+
+    private async Task<long> UpsertStepAsync(
+        long sequenceId,
+        LineUpCommitNodeWrite node,
+        LineUpGraphStepEntity? current)
+    {
+        var now = DateTime.UtcNow;
+        if (current is not null)
+        {
+            var updated = await db.Updateable<LineUpGraphStepEntity>()
+                .SetColumns(x => new LineUpGraphStepEntity
+                {
+                    SourceName = node.SourceName,
+                    DisplayName = node.RequestedDisplayName ?? current.DisplayName,
+                    StepNumber = node.Number,
+                    IsInitial = node.IsInitial,
+                    IsFinal = node.IsFinal,
+                    Comment = node.Comment,
+                    MaximumStepTime = node.MaximumStepTime,
+                    WarningTime = node.WarningTime,
+                    ModifyTime = now
+                })
+                .Where(x => !x.IsDeleted && x.Id == current.Id && x.SequenceId == sequenceId)
+                .ExecuteCommandAsync();
+            RequireSingle(updated, "PreviewStale", "A Step changed during commit.");
+            return current.Id;
+        }
+
+        var created = new LineUpGraphStepEntity
+        {
+            SequenceId = sequenceId,
+            SourceKey = node.SourceKey,
+            SourceName = node.SourceName,
+            DisplayName = node.RequestedDisplayName ?? node.InitialDisplayName,
+            StepNumber = node.Number,
+            IsInitial = node.IsInitial,
+            IsFinal = node.IsFinal,
+            IsSafety = false,
+            Comment = node.Comment,
+            MaximumStepTime = node.MaximumStepTime,
+            WarningTime = node.WarningTime,
+            IsDeleted = false,
+            CreateTime = now
+        };
+        RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+            "DuplicateSourceKey", "The Step could not be created exactly once.");
+        return created.Id;
+    }
+
+    private async Task<long> UpsertTransitionAsync(
+        long sequenceId,
+        LineUpCommitNodeWrite node,
+        LineUpGraphTransitionEntity? current)
+    {
+        var now = DateTime.UtcNow;
+        if (current is not null)
+        {
+            var updated = await db.Updateable<LineUpGraphTransitionEntity>()
+                .SetColumns(x => new LineUpGraphTransitionEntity
+                {
+                    SourceName = node.SourceName,
+                    DisplayName = node.RequestedDisplayName ?? current.DisplayName,
+                    TransitionNumber = node.Number,
+                    IsJump = node.IsJump,
+                    ProgrammingLanguage = node.ProgrammingLanguage,
+                    IsMissing = node.IsMissing,
+                    ModifyTime = now
+                })
+                .Where(x => !x.IsDeleted && x.Id == current.Id && x.SequenceId == sequenceId)
+                .ExecuteCommandAsync();
+            RequireSingle(updated, "PreviewStale", "A Transition changed during commit.");
+            return current.Id;
+        }
+
+        var created = new LineUpGraphTransitionEntity
+        {
+            SequenceId = sequenceId,
+            SourceKey = node.SourceKey,
+            SourceName = node.SourceName,
+            DisplayName = node.RequestedDisplayName ?? node.InitialDisplayName,
+            TransitionNumber = node.Number,
+            IsJump = node.IsJump,
+            ProgrammingLanguage = node.ProgrammingLanguage,
+            IsMissing = node.IsMissing,
+            IsDeleted = false,
+            CreateTime = now
+        };
+        RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+            "DuplicateSourceKey", "The Transition could not be created exactly once.");
+        return created.Id;
+    }
+
+    private async Task UpsertActionsAsync(
+        long sequenceId,
+        IReadOnlyList<LineUpCommitActionWrite> actions,
+        IReadOnlyDictionary<(string Kind, string Key), long> nodeIds,
+        CancellationToken cancellationToken)
+    {
+        var stepIds = nodeIds.Where(x => x.Key.Kind == "Step").Select(x => x.Value).ToArray();
+        var existing = stepIds.Length == 0
+            ? []
+            : await db.Queryable<LineUpGraphActionEntity>()
+                .Where(x => !x.IsDeleted && stepIds.Contains(x.StepId))
+                .ToListAsync(cancellationToken);
+        foreach (var action in actions.OrderBy(x => x.SourceKey, StringComparer.Ordinal))
+        {
+            if (!nodeIds.TryGetValue(("Step", action.StepSourceKey), out var stepId))
+            {
+                throw CommitError("GraphActionOwnerInvalid", "An Action references a missing Step source key.");
+            }
+
+            var matches = existing.Where(x => x.StepId == stepId &&
+                                               string.Equals(x.SourceKey, action.SourceKey, StringComparison.Ordinal))
+                .ToArray();
+            if (matches.Length > 1)
+            {
+                throw CommitError("DuplicateSourceKey", "An active Action source key is not unique inside its Step.");
+            }
+
+            var now = DateTime.UtcNow;
+            if (matches.Length == 1)
+            {
+                var current = matches[0];
+                var updated = await db.Updateable<LineUpGraphActionEntity>()
+                    .SetColumns(x => new LineUpGraphActionEntity
+                    {
+                        SourceName = action.SourceName,
+                        DisplayName = action.RequestedDisplayName ?? current.DisplayName,
+                        Qualifier = action.Qualifier,
+                        Ordinal = action.Ordinal,
+                        TokensJson = JsonSerializer.Serialize(action.Tokens),
+                        ActionText = action.ActionText,
+                        ModifyTime = now
+                    })
+                    .Where(x => !x.IsDeleted && x.Id == current.Id && x.StepId == stepId)
+                    .ExecuteCommandAsync();
+                RequireSingle(updated, "PreviewStale", "An Action changed during commit.");
+            }
+            else
+            {
+                var created = new LineUpGraphActionEntity
+                {
+                    StepId = stepId,
+                    SourceKey = action.SourceKey,
+                    SourceName = action.SourceName,
+                    DisplayName = action.RequestedDisplayName ?? action.InitialDisplayName,
+                    Qualifier = action.Qualifier,
+                    Ordinal = action.Ordinal,
+                    TokensJson = JsonSerializer.Serialize(action.Tokens),
+                    ActionText = action.ActionText,
+                    IsDeleted = false,
+                    CreateTime = now
+                };
+                RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+                    "DuplicateSourceKey", "The Action could not be created exactly once.");
+            }
+        }
+    }
+
+    private async Task UpsertEdgesAsync(
+        long sequenceId,
+        IReadOnlyList<LineUpCommitEdgeWrite> edges,
+        IReadOnlyDictionary<(string Kind, string Key), long> nodeIds,
+        CancellationToken cancellationToken)
+    {
+        var existing = await db.Queryable<LineUpGraphEdgeEntity>()
+            .Where(x => !x.IsDeleted && x.SequenceId == sequenceId)
+            .ToListAsync(cancellationToken);
+        foreach (var edge in edges.OrderBy(x => x.SourceKey, StringComparer.Ordinal))
+        {
+            if (!nodeIds.TryGetValue((edge.FromNodeKind, edge.FromSourceKey), out var fromId) ||
+                !nodeIds.TryGetValue((edge.ToNodeKind, edge.ToSourceKey), out var toId))
+            {
+                throw CommitError("GraphEdgeEndpointInvalid", "An Edge references a missing node source key.");
+            }
+
+            var matches = existing.Where(x =>
+                    string.Equals(x.SourceKey, edge.SourceKey, StringComparison.Ordinal))
+                .ToArray();
+            if (matches.Length > 1)
+            {
+                throw CommitError("DuplicateSourceKey", "An active Edge source key is not unique inside its Sequence.");
+            }
+
+            var now = DateTime.UtcNow;
+            if (matches.Length == 1)
+            {
+                var current = matches[0];
+                var updated = await db.Updateable<LineUpGraphEdgeEntity>()
+                    .SetColumns(x => new LineUpGraphEdgeEntity
+                    {
+                        FromNodeType = edge.FromNodeKind,
+                        FromNodeId = fromId,
+                        ToNodeType = edge.ToNodeKind,
+                        ToNodeId = toId,
+                        EdgeKind = edge.EdgeKind,
+                        BranchOrder = edge.BranchOrder,
+                        ModifyTime = now
+                    })
+                    .Where(x => !x.IsDeleted && x.Id == current.Id && x.SequenceId == sequenceId)
+                    .ExecuteCommandAsync();
+                RequireSingle(updated, "PreviewStale", "An Edge changed during commit.");
+            }
+            else
+            {
+                var created = new LineUpGraphEdgeEntity
+                {
+                    SequenceId = sequenceId,
+                    SourceKey = edge.SourceKey,
+                    FromNodeType = edge.FromNodeKind,
+                    FromNodeId = fromId,
+                    ToNodeType = edge.ToNodeKind,
+                    ToNodeId = toId,
+                    EdgeKind = edge.EdgeKind,
+                    BranchOrder = edge.BranchOrder,
+                    IsDeleted = false,
+                    CreateTime = now
+                };
+                RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+                    "DuplicateSourceKey", "The Edge could not be created exactly once.");
+            }
+        }
+    }
+
+    private async Task UpsertBindingAsync(
+        LineUpCommitPersistencePlan plan,
+        LineUpCommitDocumentWrite document,
+        LineUpCommitSequenceWrite sequence,
+        long sequenceId,
+        long? subStationId,
+        CancellationToken cancellationToken)
+    {
+        var matches = await db.Queryable<LineUpSubStationGraphBindingEntity>()
+            .Where(x => !x.IsDeleted && x.LineId == plan.LineId &&
+                        x.DeviceId == plan.DeviceId && x.SequenceId == sequenceId)
+            .ToListAsync(cancellationToken);
+        if (matches.Count > 1)
+        {
+            throw CommitError("BindingOwnerConflict", "The active line/device/Sequence binding is not unique.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (matches.Count == 1)
+        {
+            var current = matches[0];
+            var updated = await db.Updateable<LineUpSubStationGraphBindingEntity>()
+                .SetColumns(x => new LineUpSubStationGraphBindingEntity
+                {
+                    ProcessId = sequence.ProcessId,
+                    StationId = sequence.StationId,
+                    SubStationId = subStationId,
+                    PlcProjectId = document.PlcProjectId,
+                    GraphBlockId = document.GraphBlockId,
+                    InstanceDbBlockId = document.InstanceDbBlockId,
+                    BindingStatus = sequence.BindingStatus,
+                    ModifyTime = now
+                })
+                .Where(x => !x.IsDeleted && x.Id == current.Id && x.LineId == plan.LineId &&
+                            x.DeviceId == plan.DeviceId && x.SequenceId == sequenceId)
+                .ExecuteCommandAsync();
+            RequireSingle(updated, "PreviewStale", "The binding changed during commit.");
+        }
+        else
+        {
+            var created = new LineUpSubStationGraphBindingEntity
+            {
+                LineId = plan.LineId,
+                ProcessId = sequence.ProcessId,
+                StationId = sequence.StationId,
+                SubStationId = subStationId,
+                DeviceId = plan.DeviceId,
+                PlcProjectId = document.PlcProjectId,
+                SequenceId = sequenceId,
+                GraphBlockId = document.GraphBlockId,
+                InstanceDbBlockId = document.InstanceDbBlockId,
+                RuntimeBindingJson = null,
+                BindingStatus = sequence.BindingStatus,
+                LastValidatedAt = null,
+                IsDeleted = false,
+                CreateTime = now
+            };
+            RequireSingle(await db.Insertable(created).ExecuteCommandAsync(),
+                "BindingOwnerConflict", "The binding could not be created exactly once.");
+        }
+    }
+
+    private async Task SoftDeleteRemovedChildrenAsync(
+        long sequenceId,
+        LineUpCommitSequenceWrite sequence,
+        IReadOnlyDictionary<(string Kind, string Key), long> nodeIds,
+        IReadOnlyList<LineUpGraphStepEntity> existingSteps,
+        IReadOnlyList<LineUpGraphTransitionEntity> existingTransitions,
+        CancellationToken cancellationToken)
+    {
+        var desiredSteps = sequence.Nodes.Where(x => x.NodeKind == "Step")
+            .Select(x => x.SourceKey).ToHashSet(StringComparer.Ordinal);
+        var desiredTransitions = sequence.Nodes.Where(x => x.NodeKind == "Transition")
+            .Select(x => x.SourceKey).ToHashSet(StringComparer.Ordinal);
+        var removedStepIds = existingSteps.Where(x => !desiredSteps.Contains(x.SourceKey))
+            .Select(x => x.Id).ToArray();
+        var removedTransitionIds = existingTransitions.Where(x => !desiredTransitions.Contains(x.SourceKey))
+            .Select(x => x.Id).ToArray();
+        var desiredEdges = sequence.Edges.Select(x => x.SourceKey).ToHashSet(StringComparer.Ordinal);
+        var now = DateTime.UtcNow;
+
+        if (removedStepIds.Length > 0)
+        {
+            await MarkDeletedAsync<LineUpGraphActionEntity>(x => removedStepIds.Contains(x.StepId), now);
+            await MarkDeletedAsync<LineUpGraphStepEntity>(x => removedStepIds.Contains(x.Id), now);
+        }
+        if (removedTransitionIds.Length > 0)
+        {
+            await MarkDeletedAsync<LineUpGraphTransitionEntity>(x => removedTransitionIds.Contains(x.Id), now);
+        }
+
+        foreach (var step in nodeIds.Where(x => x.Key.Kind == "Step"))
+        {
+            var desiredActions = sequence.Actions
+                .Where(x => string.Equals(x.StepSourceKey, step.Key.Key, StringComparison.Ordinal))
+                .Select(x => x.SourceKey)
+                .ToHashSet(StringComparer.Ordinal);
+            var storedActions = await db.Queryable<LineUpGraphActionEntity>()
+                .Where(x => !x.IsDeleted && x.StepId == step.Value)
+                .Select(x => new { x.Id, x.SourceKey })
+                .ToListAsync(cancellationToken);
+            var ids = storedActions.Where(x => !desiredActions.Contains(x.SourceKey)).Select(x => x.Id).ToArray();
+            if (ids.Length > 0) await MarkDeletedAsync<LineUpGraphActionEntity>(x => ids.Contains(x.Id), now);
+        }
+
+        var staleEdgeIds = await db.Queryable<LineUpGraphEdgeEntity>()
+            .Where(x => !x.IsDeleted && x.SequenceId == sequenceId)
+            .Select(x => new { x.Id, x.SourceKey })
+            .ToListAsync(cancellationToken);
+        var edgeIds = staleEdgeIds.Where(x => !desiredEdges.Contains(x.SourceKey)).Select(x => x.Id).ToArray();
+        if (edgeIds.Length > 0) await MarkDeletedAsync<LineUpGraphEdgeEntity>(x => edgeIds.Contains(x.Id), now);
+    }
+
+    private async Task SoftDeleteRemovedSequencesAsync(
+        IReadOnlyList<LineUpCommitDocumentWrite> documents,
+        IReadOnlyDictionary<(long ProjectId, long GraphBlockId, string SourceKey), long> desired,
+        CancellationToken cancellationToken)
+    {
+        foreach (var owner in documents.Select(x => (x.PlcProjectId, x.GraphBlockId)).Distinct())
+        {
+            var existing = await db.Queryable<LineUpGraphSequenceEntity>()
+                .Where(x => !x.IsDeleted && x.PlcProjectId == owner.PlcProjectId &&
+                            x.GraphBlockId == owner.GraphBlockId)
+                .ToListAsync(cancellationToken);
+            var removed = existing.Where(x => !desired.ContainsKey((owner.PlcProjectId, owner.GraphBlockId, x.SourceKey)))
+                .Select(x => x.Id).ToArray();
+            foreach (var sequenceId in removed)
+            {
+                await SoftDeleteSequenceAsync(sequenceId, cancellationToken);
+            }
+        }
+    }
+
+    private async Task SoftDeleteSequenceAsync(long sequenceId, CancellationToken cancellationToken)
+    {
+        var stepIds = await db.Queryable<LineUpGraphStepEntity>()
+            .Where(x => !x.IsDeleted && x.SequenceId == sequenceId)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        if (stepIds.Count > 0)
+        {
+            var ids = stepIds.ToArray();
+            await MarkDeletedAsync<LineUpGraphActionEntity>(x => ids.Contains(x.StepId), now);
+        }
+
+        await MarkDeletedAsync<LineUpGraphStepEntity>(x => x.SequenceId == sequenceId, now);
+        await MarkDeletedAsync<LineUpGraphTransitionEntity>(x => x.SequenceId == sequenceId, now);
+        await MarkDeletedAsync<LineUpGraphEdgeEntity>(x => x.SequenceId == sequenceId, now);
+        await MarkDeletedAsync<LineUpSubStationGraphBindingEntity>(x => x.SequenceId == sequenceId, now);
+        await MarkDeletedAsync<LineUpGraphSequenceEntity>(x => x.Id == sequenceId, now);
+    }
+
+    private async Task MarkDeletedAsync<TEntity>(
+        Expression<Func<TEntity, bool>> predicate,
+        DateTime now)
+        where TEntity : BaseField, new()
+    {
+        await db.Updateable<TEntity>()
+            .SetColumns(x => x.IsDeleted == true)
+            .SetColumns(x => x.ModifyTime == now)
+            .Where(predicate)
+            .ExecuteCommandAsync();
+    }
+
+    private sealed record CommitHierarchyContext(
+        LineUpProductionLineEntity Line,
+        LineUpDeviceEntity Device,
+        IReadOnlyDictionary<long, LineUpProcessEntity> Processes,
+        IReadOnlyDictionary<long, LineUpWorkStationEntity> Stations,
+        IReadOnlyDictionary<long, LineUpSubStationEntity> SubStations)
+    {
+        public void Validate(LineUpCommitSequenceWrite sequence, long lineId, long deviceId)
+        {
+            if (!Processes.TryGetValue(sequence.ProcessId, out var process) ||
+                process.ProductionLineId != lineId ||
+                !Stations.TryGetValue(sequence.StationId, out var station) ||
+                station.ProcessId != process.Id || station.ProductionLineId != lineId)
+            {
+                throw CommitError("HierarchyCandidateStale", "The selected process/work-station relationship changed.");
+            }
+
+            if (sequence.SubStationId is > 0 &&
+                (!SubStations.TryGetValue(sequence.SubStationId.Value, out var substation) ||
+                 substation.ProcessID != process.Id || substation.WorkStationID != station.Id ||
+                 substation.ProductionLineID != lineId || substation.PlcID != deviceId))
+            {
+                throw CommitError("HierarchyCandidateStale", "The selected substation relationship changed.");
+            }
+        }
+    }
+
+    private static void RequireSingle(int affected, string code, string message)
+    {
+        if (affected != 1)
+        {
+            throw CommitError(code, message);
+        }
+    }
+
+    private static LineUpCommitPersistenceException CommitError(string code, string message) => new(code, message);
+
+    private ISugarQueryable<LineUpImportBatchEntity> BatchQuery() =>
+        db.Queryable<LineUpImportBatchEntity>();
+
+    private static LineUpExistingGraphState EmptyGraphState()
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())).ToLowerInvariant();
+        return new(hash, [], [], [], [], []);
+    }
+
+}

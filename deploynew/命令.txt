@@ -1,0 +1,19 @@
+#测试环境打包
+.\deploynew\build-dotnet.ps1 -Test
+
+#上传
+3个文件即可
+
+#远端解压缩
+cd /opt/hsjm-test/20260909
+
+unzip -o hsjm-ai-app-2026.09.23.zip -d hsjm-ai-app-2026.09.09
+cd hsjm-ai-app-2026.09.09
+
+docker stop hsjm-ai-test2-api-1
+docker rm hsjm-ai-test2-api-1
+
+#执行
+bash server-start.sh 28506 ../appdata-init-2026.09.10.tar.gz
+
+docker logs --tail 50 hsjm-ai-test2-api-1

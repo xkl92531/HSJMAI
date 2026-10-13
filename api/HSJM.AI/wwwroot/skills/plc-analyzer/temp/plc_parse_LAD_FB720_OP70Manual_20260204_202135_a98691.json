@@ -1,0 +1,2467 @@
+{
+  "file_info": {
+    "path": "e:\\AI效率优化\\AI应用平台\\HSJM_AI_PLC\\docs\\demoimg\\LAD_FB720_OP70Manual.xml",
+    "encoding": "UTF-8-SIG",
+    "brand": "Siemens",
+    "product": "TIA Portal",
+    "version": "V18",
+    "total_lines": 7544,
+    "file_size": 303658
+  },
+  "blocks": [
+    {
+      "name": "FB720_OP70Manual",
+      "type": "FB",
+      "number": 720,
+      "language": "LAD",
+      "line_start": 0,
+      "line_end": 0,
+      "networks_count": 0,
+      "comment": "",
+      "author": "",
+      "version": "0.1"
+    }
+  ],
+  "variables": [
+    {
+      "name": "General",
+      "path": "General",
+      "datatype": "\"UDT_General\"",
+      "scope": "STAT",
+      "comment": "固定部分，位置不允许变动",
+      "initial_value": "",
+      "remanence": "SetInIDB"
+    },
+    {
+      "name": "ManualButton",
+      "path": "General.ManualButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoButton",
+      "path": "General.AutoButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunButton",
+      "path": "General.AutoRunButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStopButton",
+      "path": "General.AutoStopButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomingButton",
+      "path": "General.HomingButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "LampTest",
+      "path": "General.LampTest",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualINIT_SQ",
+      "path": "General.ManualINIT_SQ",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetButton",
+      "path": "General.ResetButton",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BuzON",
+      "path": "General.BuzON",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStart",
+      "path": "General.AutoStart",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunning",
+      "path": "General.AutoRunning",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Graph_TPush",
+      "path": "General.Graph_TPush",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeLamp",
+      "path": "General.HomeLamp",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare20",
+      "path": "General.Spare20",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare4",
+      "path": "General.Spare4",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare5",
+      "path": "General.Spare5",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualMod",
+      "path": "General.ManualMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoMod",
+      "path": "General.AutoMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunMod",
+      "path": "General.AutoRunMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStopMod",
+      "path": "General.AutoStopMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeOK",
+      "path": "General.HomeOK",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomingKeep",
+      "path": "General.HomingKeep",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeStart",
+      "path": "General.HomeStart",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StepMode",
+      "path": "General.StepMode",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "E_StopStatus",
+      "path": "General.E_StopStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AlarmStatus",
+      "path": "General.AlarmStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "WarningStatus",
+      "path": "General.WarningStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "GraphRunning",
+      "path": "General.GraphRunning",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetStatus",
+      "path": "General.ResetStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CleanLineMode",
+      "path": "General.CleanLineMode",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "MasterMode",
+      "path": "General.MasterMode",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NullPartSwitch",
+      "path": "General.NullPartSwitch",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationStatus",
+      "path": "General.StationStatus",
+      "datatype": "Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare6",
+      "path": "General.Spare6",
+      "datatype": "Array[1..3] of Byte",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "InitStep",
+      "path": "General.InitStep",
+      "datatype": "Array[1..16] of Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StepNum",
+      "path": "General.StepNum",
+      "datatype": "Array[1..19] of Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimes",
+      "path": "General.StationTimes",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimes",
+      "path": "General.CycleTimes",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesSave",
+      "path": "General.CycleTimesSave",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Sparereal",
+      "path": "General.Sparereal",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimesPlus",
+      "path": "General.StationTimesPlus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimesClocking",
+      "path": "General.StationTimesClocking",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesPlus",
+      "path": "General.CycleTimesPlus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesClocking",
+      "path": "General.CycleTimesClocking",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare7",
+      "path": "General.Spare7",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare8",
+      "path": "General.Spare8",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare9",
+      "path": "General.Spare9",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare10",
+      "path": "General.Spare10",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "OKPartNum",
+      "path": "General.OKPartNum",
+      "datatype": "Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NGPartNum",
+      "path": "General.NGPartNum",
+      "datatype": "Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AllPartNum",
+      "path": "General.AllPartNum",
+      "datatype": "Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PromptValue",
+      "path": "General.PromptValue",
+      "datatype": "Int",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare11",
+      "path": "General.Spare11",
+      "datatype": "Array[1..16] of Byte",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CYL_UPPG",
+      "path": "General.CYL_UPPG",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CYL_DNPG",
+      "path": "General.CYL_DNPG",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS1",
+      "path": "General.PLUS1",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS2",
+      "path": "General.PLUS2",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS3",
+      "path": "General.PLUS3",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS4",
+      "path": "General.PLUS4",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS5",
+      "path": "General.PLUS5",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS6",
+      "path": "General.PLUS6",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS7",
+      "path": "General.PLUS7",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS8",
+      "path": "General.PLUS8",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS9",
+      "path": "General.PLUS9",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS10",
+      "path": "General.PLUS10",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS11",
+      "path": "General.PLUS11",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS12",
+      "path": "General.PLUS12",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS13",
+      "path": "General.PLUS13",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS14",
+      "path": "General.PLUS14",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Space",
+      "path": "Space",
+      "datatype": "Array[1..386] of Byte",
+      "scope": "STAT",
+      "comment": "空地址",
+      "initial_value": "",
+      "remanence": "SetInIDB"
+    },
+    {
+      "name": "HMI_ValvePublic",
+      "path": "HMI_ValvePublic",
+      "datatype": "Struct",
+      "scope": "STAT",
+      "comment": "不允许删除，且位置不允许变动",
+      "initial_value": "",
+      "remanence": "SetInIDB"
+    },
+    {
+      "name": "Valve",
+      "path": "Valve",
+      "datatype": "Array[0..8] of \"FB3002_Valve\"",
+      "scope": "STAT",
+      "comment": "气缸",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IWP",
+      "path": "Valve.IWP",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IHP",
+      "path": "Valve.IHP",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdAuto",
+      "path": "Valve.FwdAuto",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdAuto",
+      "path": "Valve.BkdAuto",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPmt",
+      "path": "Valve.FwdPmt",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPmt",
+      "path": "Valve.BkdPmt",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PmtDebug",
+      "path": "Valve.PmtDebug",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualMod",
+      "path": "Valve.ManualMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunMod",
+      "path": "Valve.AutoRunMod",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "E_StopStatus",
+      "path": "Valve.E_StopStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetStatus",
+      "path": "Valve.ResetStatus",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Model",
+      "path": "Valve.Model",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NeedSafeAckFwd",
+      "path": "Valve.NeedSafeAckFwd",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NeedSafeAckBkd",
+      "path": "Valve.NeedSafeAckBkd",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPresetTime",
+      "path": "Valve.FwdPresetTime",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPresetTime",
+      "path": "Valve.BkdPresetTime",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QFwd",
+      "path": "Valve.QFwd",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QBkd",
+      "path": "Valve.QBkd",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPos",
+      "path": "Valve.FwdPos",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPos",
+      "path": "Valve.BkdPos",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdErr",
+      "path": "Valve.FwdErr",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdErr",
+      "path": "Valve.BkdErr",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdLockErr",
+      "path": "Valve.FwdLockErr",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdLockErr",
+      "path": "Valve.BkdLockErr",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdUsedTime",
+      "path": "Valve.FwdUsedTime",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdUsedTime",
+      "path": "Valve.BkdUsedTime",
+      "datatype": "Real",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderCmd",
+      "path": "Valve.CylinderCmd",
+      "datatype": "Struct",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdLock",
+      "path": "Valve.FwdLock",
+      "datatype": "Word",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdLock",
+      "path": "Valve.BkdLock",
+      "datatype": "Word",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "RequestFwdSaftyAck",
+      "path": "Valve.RequestFwdSaftyAck",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "RequestBkdSaftyAck",
+      "path": "Valve.RequestBkdSaftyAck",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdSafeAckOK",
+      "path": "Valve.FwdSafeAckOK",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdSafeAckOK",
+      "path": "Valve.BkdSafeAckOK",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualButton",
+      "path": "ManualButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoButton",
+      "path": "AutoButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunButton",
+      "path": "AutoRunButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStopButton",
+      "path": "AutoStopButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomingButton",
+      "path": "HomingButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "LampTest",
+      "path": "LampTest",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualINIT_SQ",
+      "path": "ManualINIT_SQ",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetButton",
+      "path": "ResetButton",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BuzON",
+      "path": "BuzON",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStart",
+      "path": "AutoStart",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunning",
+      "path": "AutoRunning",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Graph_TPush",
+      "path": "Graph_TPush",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeLamp",
+      "path": "HomeLamp",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare20",
+      "path": "Spare20",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare4",
+      "path": "Spare4",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare5",
+      "path": "Spare5",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualMod",
+      "path": "ManualMod",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoMod",
+      "path": "AutoMod",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunMod",
+      "path": "AutoRunMod",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoStopMod",
+      "path": "AutoStopMod",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeOK",
+      "path": "HomeOK",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomingKeep",
+      "path": "HomingKeep",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HomeStart",
+      "path": "HomeStart",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StepMode",
+      "path": "StepMode",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "E_StopStatus",
+      "path": "E_StopStatus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AlarmStatus",
+      "path": "AlarmStatus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "WarningStatus",
+      "path": "WarningStatus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "GraphRunning",
+      "path": "GraphRunning",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetStatus",
+      "path": "ResetStatus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CleanLineMode",
+      "path": "CleanLineMode",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "MasterMode",
+      "path": "MasterMode",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NullPartSwitch",
+      "path": "NullPartSwitch",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationStatus",
+      "path": "StationStatus",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare6",
+      "path": "Spare6",
+      "datatype": "Array[1..3] of Byte",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "InitStep",
+      "path": "InitStep",
+      "datatype": "Array[1..16] of Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StepNum",
+      "path": "StepNum",
+      "datatype": "Array[1..19] of Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimes",
+      "path": "StationTimes",
+      "datatype": "Real",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimes",
+      "path": "CycleTimes",
+      "datatype": "Real",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesSave",
+      "path": "CycleTimesSave",
+      "datatype": "Real",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Sparereal",
+      "path": "Sparereal",
+      "datatype": "Real",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimesPlus",
+      "path": "StationTimesPlus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "StationTimesClocking",
+      "path": "StationTimesClocking",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesPlus",
+      "path": "CycleTimesPlus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CycleTimesClocking",
+      "path": "CycleTimesClocking",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare7",
+      "path": "Spare7",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare8",
+      "path": "Spare8",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare9",
+      "path": "Spare9",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare10",
+      "path": "Spare10",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "OKPartNum",
+      "path": "OKPartNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NGPartNum",
+      "path": "NGPartNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AllPartNum",
+      "path": "AllPartNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PromptValue",
+      "path": "PromptValue",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare11",
+      "path": "Spare11",
+      "datatype": "Array[1..16] of Byte",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CYL_UPPG",
+      "path": "CYL_UPPG",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CYL_DNPG",
+      "path": "CYL_DNPG",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS1",
+      "path": "PLUS1",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS2",
+      "path": "PLUS2",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS3",
+      "path": "PLUS3",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS4",
+      "path": "PLUS4",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS5",
+      "path": "PLUS5",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS6",
+      "path": "PLUS6",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS7",
+      "path": "PLUS7",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS8",
+      "path": "PLUS8",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS9",
+      "path": "PLUS9",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS10",
+      "path": "PLUS10",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS11",
+      "path": "PLUS11",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS12",
+      "path": "PLUS12",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS13",
+      "path": "PLUS13",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PLUS14",
+      "path": "PLUS14",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPmt",
+      "path": "FwdPmt",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPmt",
+      "path": "BkdPmt",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPos",
+      "path": "FwdPos",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPos",
+      "path": "BkdPos",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IWP",
+      "path": "IWP",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IHP",
+      "path": "IHP",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Error",
+      "path": "Error",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Spare8",
+      "path": "Spare8",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NameNum",
+      "path": "NameNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "SafeRequestMapOn",
+      "path": "SafeRequestMapOn",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FirstLevelStaus",
+      "path": "FirstLevelStaus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "SecondLevelStaus",
+      "path": "SecondLevelStaus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ThreeLevelStaus",
+      "path": "ThreeLevelStaus",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FirstLevelDisplay",
+      "path": "FirstLevelDisplay",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "SecondLevelDisplay",
+      "path": "SecondLevelDisplay",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ThreeLevelDisplay",
+      "path": "ThreeLevelDisplay",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AckNumber",
+      "path": "AckNumber",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "HMISafeAckNum",
+      "path": "HMISafeAckNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "P",
+      "path": "P",
+      "datatype": "Array[1..8] of Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdTPPB",
+      "path": "FwdTPPB",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdTPPB",
+      "path": "BkdTPPB",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPmt",
+      "path": "FwdPmt",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPmt",
+      "path": "BkdPmt",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPos",
+      "path": "FwdPos",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPos",
+      "path": "BkdPos",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IWP",
+      "path": "IWP",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IHP",
+      "path": "IHP",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QFwd",
+      "path": "QFwd",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QBkd",
+      "path": "QBkd",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManMode",
+      "path": "ManMode",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoMode",
+      "path": "AutoMode",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderOutFwdError",
+      "path": "CylinderOutFwdError",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderOutBkdError",
+      "path": "CylinderOutBkdError",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderLockFwdlock",
+      "path": "CylinderLockFwdlock",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderLockBkdlock",
+      "path": "CylinderLockBkdlock",
+      "datatype": "Bool",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderNameNum",
+      "path": "CylinderNameNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderNum",
+      "path": "CylinderNum",
+      "datatype": "Int",
+      "scope": "INTERNAL",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IWP",
+      "path": "IWP",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "IHP",
+      "path": "IHP",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdAuto",
+      "path": "FwdAuto",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdAuto",
+      "path": "BkdAuto",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPmt",
+      "path": "FwdPmt",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPmt",
+      "path": "BkdPmt",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "PmtDebug",
+      "path": "PmtDebug",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ManualMod",
+      "path": "ManualMod",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "AutoRunMod",
+      "path": "AutoRunMod",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "E_StopStatus",
+      "path": "E_StopStatus",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "ResetStatus",
+      "path": "ResetStatus",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "Model",
+      "path": "Model",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NeedSafeAckFwd",
+      "path": "NeedSafeAckFwd",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "NeedSafeAckBkd",
+      "path": "NeedSafeAckBkd",
+      "datatype": "Bool",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPresetTime",
+      "path": "FwdPresetTime",
+      "datatype": "Real",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPresetTime",
+      "path": "BkdPresetTime",
+      "datatype": "Real",
+      "scope": "IN",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QFwd",
+      "path": "QFwd",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "QBkd",
+      "path": "QBkd",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdPos",
+      "path": "FwdPos",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdPos",
+      "path": "BkdPos",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdErr",
+      "path": "FwdErr",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdErr",
+      "path": "BkdErr",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdLockErr",
+      "path": "FwdLockErr",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdLockErr",
+      "path": "BkdLockErr",
+      "datatype": "Bool",
+      "scope": "OUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdUsedTime",
+      "path": "FwdUsedTime",
+      "datatype": "Real",
+      "scope": "INOUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdUsedTime",
+      "path": "BkdUsedTime",
+      "datatype": "Real",
+      "scope": "INOUT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "CylinderCmd",
+      "path": "CylinderCmd",
+      "datatype": "Struct",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdLock",
+      "path": "FwdLock",
+      "datatype": "Word",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdLock",
+      "path": "BkdLock",
+      "datatype": "Word",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "RequestFwdSaftyAck",
+      "path": "RequestFwdSaftyAck",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "RequestBkdSaftyAck",
+      "path": "RequestBkdSaftyAck",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "FwdSafeAckOK",
+      "path": "FwdSafeAckOK",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    },
+    {
+      "name": "BkdSafeAckOK",
+      "path": "BkdSafeAckOK",
+      "datatype": "Bool",
+      "scope": "STAT",
+      "comment": "",
+      "initial_value": "",
+      "remanence": "NonRetain"
+    }
+  ],
+  "calls": [
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FC8002_ManualDisplay",
+      "callee_type": "FC",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "FB720_OP70Manual",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FC8002_ManualDisplay",
+      "callee_type": "FC",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    },
+    {
+      "caller": "",
+      "callee": "FB3002_Valve",
+      "callee_type": "FB",
+      "network_id": ""
+    }
+  ],
+  "graph_steps": [],
+  "graph_transitions": [],
+  "networks": [
+    {
+      "id": 1,
+      "title": "*******************************公共处理；气缸控制由此开始  不得删除*******************************",
+      "comment": ""
+    },
+    {
+      "id": 3,
+      "title": "OP070_CYL01_电芯定位夹爪气缸左1",
+      "comment": ""
+    },
+    {
+      "id": 5,
+      "title": "OP070_CYL01---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 7,
+      "title": "OP070_CYL02_电芯定位夹爪气缸左2",
+      "comment": ""
+    },
+    {
+      "id": 9,
+      "title": "OP070_CYL02---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 11,
+      "title": "OP070_CYL03_电芯定位夹爪气缸左3",
+      "comment": ""
+    },
+    {
+      "id": 13,
+      "title": "OP070_CYL03---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 15,
+      "title": "OP070_CYL04_电芯定位夹爪气缸左4",
+      "comment": ""
+    },
+    {
+      "id": 17,
+      "title": "OP070_CYL04---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 19,
+      "title": "OP070_CYL05_电芯定位夹爪气缸右1",
+      "comment": ""
+    },
+    {
+      "id": 21,
+      "title": "OP070_CYL05---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 23,
+      "title": "OP070_CYL06_电芯定位夹爪气缸右2",
+      "comment": ""
+    },
+    {
+      "id": 25,
+      "title": "OP070_CYL06---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 27,
+      "title": "OP070_CYL07_电芯定位夹爪气缸右3",
+      "comment": ""
+    },
+    {
+      "id": 29,
+      "title": "OP070_CYL07---->互锁条件",
+      "comment": ""
+    },
+    {
+      "id": 31,
+      "title": "OP070_CYL08_电芯定位夹爪气缸右4",
+      "comment": ""
+    },
+    {
+      "id": 33,
+      "title": "OP070_CYL08---->互锁条件",
+      "comment": ""
+    }
+  ],
+  "semantic_hints": {
+    "station_type": "电池",
+    "function_category": "气缸控制, 自动模式, 顺序控制",
+    "keywords_detected": [
+      "Clean",
+      "电芯",
+      "Auto",
+      "Cycle",
+      "Step",
+      "Test",
+      "Graph",
+      "Manual"
+    ],
+    "confidence": 0.9,
+    "inferred_purpose": "工位: OP70 | 类型: 电池 | 功能: 气缸控制, 自动模式, 顺序控制 | 程序块: FB720_OP70Manual (FB720) | 语言: LAD | 描述: OP070_CYL01_电芯定位夹爪气缸左1"
+  },
+  "key_comments": [
+    "OP070_CYL01_电芯定位夹爪气缸左1",
+    "OP070_CYL02_电芯定位夹爪气缸左2",
+    "OP070_CYL03_电芯定位夹爪气缸左3",
+    "OP070_CYL04_电芯定位夹爪气缸左4",
+    "OP070_CYL05_电芯定位夹爪气缸右1",
+    "OP070_CYL06_电芯定位夹爪气缸右2",
+    "OP070_CYL07_电芯定位夹爪气缸右3",
+    "OP070_CYL08_电芯定位夹爪气缸右4",
+    "OP070_CYL01---->互锁条件",
+    "OP070_CYL02---->互锁条件"
+  ],
+  "summary": {
+    "total_blocks": 1,
+    "total_variables": 245,
+    "total_calls": 18,
+    "total_graph_steps": 0,
+    "total_networks": 17
+  },
+  "errors": []
+}

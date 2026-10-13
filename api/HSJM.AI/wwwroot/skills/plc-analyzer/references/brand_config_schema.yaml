@@ -1,0 +1,381 @@
+# PLC品牌配置Schema定义
+# 版本: 1.0.0
+# 用途: 规范brands/*.yaml配置文件的字段结构
+# 新增品牌时，按此Schema编写配置即可，无需修改代码
+
+$schema: "http://json-schema.org/draft-07/schema#"
+title: "PLC Brand Configuration Schema"
+description: "定义PLC品牌解析配置的标准格式"
+
+# ============================================================
+# 配置文件完整结构示例
+# ============================================================
+example:
+  metadata:
+    brand: "Siemens"
+    product: "TIA Portal"
+    versions: ["V16", "V17", "V18"]
+    author: "HSJM-AI"
+    last_updated: "2026-02-04"
+    description: "西门子TIA Portal导出的XML格式PLC程序"
+  
+  detection:
+    file_extensions: [".xml", ".ml"]
+    content_signatures:
+      - pattern: "<Document>"
+        position: "start"
+      - pattern: "<SW.Blocks"
+        position: "any"
+    encoding_hints: ["utf-8", "utf-16"]
+  
+  preprocessing:
+    namespace_handling: "strip"  # strip/preserve/map
+    namespace_map:
+      sw: "http://www.siemens.com/automation/Openness/SW/Interface/v5"
+    chunk_strategy: "xml_element"
+    chunk_element: "SW.Blocks.*"
+  
+  extraction:
+    blocks: {}      # 块提取规则
+    variables: {}   # 变量提取规则
+    calls: {}       # 调用关系提取规则
+    networks: {}    # 网络逻辑提取规则（可选）
+    graphs: {}      # Graph顺控提取规则（可选）
+  
+  semantic:
+    prompts: {}     # LLM语义分析提示词模板
+
+# ============================================================
+# 字段详细定义
+# ============================================================
+
+definitions:
+
+  # ----------------------------------------------------------
+  # metadata: 元信息
+  # ----------------------------------------------------------
+  metadata:
+    type: object
+    required: [brand, product]
+    properties:
+      brand:
+        type: string
+        description: "PLC品牌名称"
+        examples: ["Siemens", "Mitsubishi", "Beckhoff", "Codesys"]
+      product:
+        type: string
+        description: "产品/软件名称"
+        examples: ["TIA Portal", "GX Works3", "TwinCAT 3"]
+      versions:
+        type: array
+        items: { type: string }
+        description: "支持的版本列表"
+      author:
+        type: string
+      last_updated:
+        type: string
+        format: date
+      description:
+        type: string
+
+  # ----------------------------------------------------------
+  # detection: 文件格式检测规则
+  # ----------------------------------------------------------
+  detection:
+    type: object
+    description: "用于快速识别文件是否属于此品牌"
+    properties:
+      file_extensions:
+        type: array
+        items: { type: string }
+        description: "文件扩展名列表"
+        examples: [[".xml", ".ml", ".aml"]]
+      content_signatures:
+        type: array
+        items:
+          type: object
+          properties:
+            pattern:
+              type: string
+              description: "匹配模式（字符串或正则）"
+            position:
+              type: string
+              enum: [start, any, end]
+              description: "匹配位置: start=前1000字符, any=任意位置, end=后1000字符"
+            is_regex:
+              type: boolean
+              default: false
+      encoding_hints:
+        type: array
+        items: { type: string }
+        description: "可能的编码格式，按优先级排序"
+      detection_score_threshold:
+        type: number
+        default: 0.8
+        description: "检测置信度阈值(0-1)，多个特征匹配时的加权分数"
+
+  # ----------------------------------------------------------
+  # preprocessing: 预处理规则
+  # ----------------------------------------------------------
+  preprocessing:
+    type: object
+    properties:
+      namespace_handling:
+        type: string
+        enum: [strip, preserve, map]
+        default: strip
+        description: |
+          XML命名空间处理方式:
+          - strip: 移除所有命名空间前缀（推荐，简化XPath）
+          - preserve: 保留原样
+          - map: 使用namespace_map定义的前缀映射
+      namespace_map:
+        type: object
+        additionalProperties: { type: string }
+        description: "命名空间前缀映射 {prefix: uri}"
+      chunk_strategy:
+        type: string
+        enum: [xml_element, line_count, file_size, none]
+        default: xml_element
+        description: |
+          大文件分块策略:
+          - xml_element: 按XML元素边界分块
+          - line_count: 按行数分块
+          - file_size: 按文件大小分块
+          - none: 不分块（小文件）
+      chunk_element:
+        type: string
+        description: "分块的XML元素选择器（chunk_strategy=xml_element时）"
+        examples: ["SW.Blocks.*", "//Program", "//POU"]
+      chunk_size:
+        type: integer
+        description: "分块大小（行数或字节数）"
+        default: 5000
+
+  # ----------------------------------------------------------
+  # extraction: 数据提取规则（核心）
+  # ----------------------------------------------------------
+  extraction:
+    type: object
+    properties:
+      
+      # 程序块提取
+      blocks:
+        type: object
+        properties:
+          selector:
+            type: string
+            description: "块元素的XPath/JSONPath选择器"
+            examples: 
+              - "//SW.Blocks.FB | //SW.Blocks.FC | //SW.Blocks.DB | //SW.Blocks.OB"
+              - "//POU[@pouType]"
+          type_detection:
+            type: string
+            enum: [element_name, attribute, xpath]
+            description: "块类型检测方式"
+          type_map:
+            type: object
+            additionalProperties: { type: string }
+            description: "元素名/属性值到标准类型的映射"
+            examples:
+              - { "SW.Blocks.FB": "FB", "SW.Blocks.FC": "FC" }
+          fields:
+            $ref: "#/definitions/field_mapping"
+      
+      # 变量提取
+      variables:
+        type: object
+        properties:
+          selector:
+            type: string
+            description: "变量元素选择器"
+            examples: [".//Section/Member", ".//Variable"]
+          scope_detection:
+            type: object
+            description: "作用域检测规则"
+            properties:
+              method:
+                type: string
+                enum: [parent_element, attribute, xpath]
+              mapping:
+                type: object
+                additionalProperties: { type: string }
+                examples:
+                  - { "Input": "IN", "Output": "OUT", "Static": "STAT" }
+          nested:
+            type: object
+            description: "嵌套结构处理"
+            properties:
+              enabled: { type: boolean, default: true }
+              recurse_selector: { type: string }
+              path_separator: { type: string, default: "." }
+              max_depth: { type: integer, default: 10 }
+          fields:
+            $ref: "#/definitions/field_mapping"
+      
+      # 调用关系提取
+      calls:
+        type: object
+        properties:
+          selector:
+            type: string
+            examples: [".//Call/CallInfo", ".//Instruction[@type='CALL']"]
+          fields:
+            $ref: "#/definitions/field_mapping"
+      
+      # 网络逻辑提取（LAD/FBD）
+      networks:
+        type: object
+        properties:
+          selector:
+            type: string
+            examples: [".//CompileUnit", ".//Rung"]
+          extract_logic:
+            type: boolean
+            default: false
+            description: "是否提取详细逻辑（增加复杂度）"
+          fields:
+            $ref: "#/definitions/field_mapping"
+      
+      # Graph顺控提取
+      graphs:
+        type: object
+        properties:
+          steps_selector: { type: string }
+          transitions_selector: { type: string }
+          connections_selector: { type: string }
+          fields:
+            $ref: "#/definitions/field_mapping"
+
+  # ----------------------------------------------------------
+  # field_mapping: 字段映射定义
+  # ----------------------------------------------------------
+  field_mapping:
+    type: object
+    additionalProperties:
+      oneOf:
+        - type: string
+          description: "简单XPath/JSONPath表达式"
+        - type: object
+          properties:
+            xpath:
+              type: string
+              description: "XPath表达式"
+            jsonpath:
+              type: string
+              description: "JSONPath表达式（二选一）"
+            attribute:
+              type: string
+              description: "属性名（简写）"
+            transform:
+              type: string
+              description: "转换函数: text(), int(), bool(), local-name(), regex(pattern)"
+            default:
+              description: "默认值（提取失败时）"
+            fallback:
+              type: string
+              description: "备选表达式（主表达式失败时尝试）"
+            multi:
+              type: boolean
+              default: false
+              description: "是否返回多个匹配结果"
+    examples:
+      - name: "@Name"
+        number: 
+          xpath: "./AttributeList/Number"
+          transform: "int()"
+        comment:
+          xpath: ".//MultiLanguageText[@Lang='zh-CN']"
+          fallback: ".//MultiLanguageText[1]"
+          transform: "text()"
+
+  # ----------------------------------------------------------
+  # semantic: LLM语义分析配置
+  # ----------------------------------------------------------
+  semantic:
+    type: object
+    properties:
+      prompts:
+        type: object
+        description: "各场景的提示词模板，支持变量替换 {variable}"
+        properties:
+          block_summary:
+            type: string
+            description: "块功能摘要生成提示词"
+          variable_analysis:
+            type: string
+            description: "变量用途分析提示词"
+          fault_detection:
+            type: string
+            description: "故障模式识别提示词"
+        examples:
+          - block_summary: |
+              分析以下PLC程序块的功能:
+              - 块名: {name}
+              - 类型: {type}
+              - 编程语言: {language}
+              - 变量摘要: {variables_summary}
+              - 调用关系: {calls_summary}
+              
+              请用中文简要描述这个块的主要功能(100字以内)。
+      token_budget:
+        type: object
+        description: "各部分的token预算分配"
+        properties:
+          block_info: { type: integer, default: 200 }
+          variables: { type: integer, default: 1500 }
+          calls: { type: integer, default: 500 }
+          expressions: { type: integer, default: 800 }
+          total: { type: integer, default: 4000 }
+      priority_rules:
+        type: array
+        description: "变量裁剪优先级规则"
+        items:
+          type: object
+          properties:
+            scope: { type: string }
+            priority: { type: integer }
+        examples:
+          - [{ scope: "IN", priority: 1 }, { scope: "OUT", priority: 2 }]
+
+# ============================================================
+# 完整配置文件示例（简化版）
+# ============================================================
+full_example: |
+  # brands/example_brand.yaml
+  metadata:
+    brand: "ExampleBrand"
+    product: "Example IDE"
+    versions: ["V1.0"]
+  
+  detection:
+    file_extensions: [".xml"]
+    content_signatures:
+      - pattern: "<ExampleProject>"
+        position: start
+  
+  extraction:
+    blocks:
+      selector: "//ProgramBlock"
+      fields:
+        name: "@name"
+        type: "@blockType"
+        number:
+          xpath: "@id"
+          transform: "int()"
+    
+    variables:
+      selector: ".//Variable"
+      fields:
+        name: "@name"
+        datatype: "@type"
+        comment: "./Comment/text()"
+    
+    calls:
+      selector: ".//CallInstruction"
+      fields:
+        callee: "@targetBlock"
+  
+  semantic:
+    prompts:
+      block_summary: "分析块 {name} 的功能..."

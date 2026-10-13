@@ -1,0 +1,58 @@
+export default {
+  'zh-cn': {
+    ioTagUpload: {
+      selectFileFirst: '请先选择CSV文件',
+      projectIdMissing: '项目ID缺失',
+      importSuccess: '成功导入 {count} 条IO标签',
+      importFailed: '导入失败',
+      importError: '导入过程中发生错误',
+      title: '导入IO标签 (CSV)',
+      dragHere: '拖拽CSV文件到此处，或',
+      clickUpload: '点击上传',
+      csvTip: '仅支持 CSV 格式，表头需包含：Path, TableName, TagName, Address, DataType 等字段',
+      cancel: '取消',
+    },
+  },
+  'zh-tw': {
+    ioTagUpload: {
+      selectFileFirst: '請先選擇CSV檔案',
+      projectIdMissing: '項目ID缺失',
+      importSuccess: '成功匯入 {count} 條IO標籤',
+      importFailed: '匯入失敗',
+      importError: '匯入過程中發生錯誤',
+      title: '匯入IO標籤 (CSV)',
+      dragHere: '拖拽CSV檔案到此處，或',
+      clickUpload: '點擊上傳',
+      csvTip: '僅支援 CSV 格式，表頭需包含：Path, TableName, TagName, Address, DataType 等欄位',
+      cancel: '取消',
+    },
+  },
+  'en': {
+    ioTagUpload: {
+      selectFileFirst: 'Please select a CSV file first',
+      projectIdMissing: 'Project ID is missing',
+      importSuccess: 'Successfully imported {count} IO tags',
+      importFailed: 'Import failed',
+      importError: 'An error occurred during import',
+      title: 'Import IO Tags (CSV)',
+      dragHere: 'Drag the CSV file here, or',
+      clickUpload: 'click to upload',
+      csvTip: 'Only CSV format is supported; the header must include fields such as Path, TableName, TagName, Address, DataType',
+      cancel: 'Cancel',
+    },
+  },
+  'ja': {
+    ioTagUpload: {
+      selectFileFirst: '先にCSVファイルを選択してください',
+      projectIdMissing: 'プロジェクトIDが不足しています',
+      importSuccess: '{count} 件のIOタグをインポートしました',
+      importFailed: 'インポートに失敗しました',
+      importError: 'インポート中にエラーが発生しました',
+      title: 'IOタグのインポート (CSV)',
+      dragHere: 'CSVファイルをここにドラッグ、または',
+      clickUpload: 'クリックしてアップロード',
+      csvTip: 'CSV形式のみ対応です。ヘッダーに Path、TableName、TagName、Address、DataType などのフィールドが必要です',
+      cancel: 'キャンセル',
+    },
+  },
+}

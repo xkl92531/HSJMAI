@@ -1,0 +1,1005 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Document>
+  <Engineering version="V16" />
+  <DocumentInfo>
+    <Created>2025-07-14T03:15:48.5610059Z</Created>
+    <ExportSetting>WithDefaults</ExportSetting>
+    <InstalledProducts>
+      <Product>
+        <DisplayName>Totally Integrated Automation Portal</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>TIA Portal Version Control Interface</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </OptionPackage>
+      <OptionPackage>
+        <DisplayName>TIA Portal Openness</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>STEP 7 Professional</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </Product>
+      <OptionPackage>
+        <DisplayName>STEP 7 Safety</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </OptionPackage>
+      <Product>
+        <DisplayName>WinCC Advanced</DisplayName>
+        <DisplayVersion>V16</DisplayVersion>
+      </Product>
+    </InstalledProducts>
+  </DocumentInfo>
+  <SW.Blocks.FB ID="0">
+    <AttributeList>
+      <AutoNumber>false</AutoNumber>
+      <HeaderAuthor />
+      <HeaderFamily />
+      <HeaderName />
+      <HeaderVersion>0.1</HeaderVersion>
+      <Interface><Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v4">
+  <Section Name="Input" />
+  <Section Name="Output" />
+  <Section Name="InOut" />
+  <Section Name="Static">
+    <Member Name="HMI" Datatype="Struct" Remanence="SetInIDB" Accessibility="Public"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Member Name="New" Datatype="Bool"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">清除配方库选择的配方</MultiLanguageText></Comment></Member><Member Name="Open" Datatype="Bool"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">打开配方库当前配方参数</MultiLanguageText></Comment></Member><Member Name="Save" Datatype="Bool"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">保存当前配置的轴配方参数</MultiLanguageText></Comment></Member><Member Name="RecipeNumber" Datatype="Int"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">配方选择号</MultiLanguageText></Comment><StartValue>1</StartValue></Member><Member Name="OpenNumber" Datatype="Int"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">当前打开配方号</MultiLanguageText></Comment></Member><Member Name="DownloadNumber" Datatype="Int"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">当前下载配方号</MultiLanguageText></Comment></Member><Member Name="OpenNumberText" Datatype="WString[24]"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">当前打开配方名称</MultiLanguageText></Comment></Member><Member Name="DownloadNumberText" Datatype="WString[24]"><AttributeList><BooleanAttribute Name="ExternalAccessible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalVisible" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="ExternalWritable" SystemDefined="true">true</BooleanAttribute><BooleanAttribute Name="SetPoint" SystemDefined="true">false</BooleanAttribute></AttributeList><Comment><MultiLanguageText Lang="zh-CN">当前下载配方名称</MultiLanguageText></Comment><StartValue>WSTRING#'A18'</StartValue></Member></Member>
+  </Section>
+  <Section Name="Temp">
+    <Member Name="RetVal1" Datatype="Int" />
+    <Member Name="RetVal2" Datatype="Int" />
+    <Member Name="RetVal3" Datatype="Bool" />
+    <Member Name="RetVal4" Datatype="Bool" />
+    <Member Name="RetVal5" Datatype="Int" />
+  </Section>
+  <Section Name="Constant" />
+</Sections></Interface>
+      <IsIECCheckEnabled>false</IsIECCheckEnabled>
+      <MemoryLayout>Standard</MemoryLayout>
+      <Name>FB10182_Recipe</Name>
+      <Number>10182</Number>
+      <ProgrammingLanguage>SCL</ProgrammingLanguage>
+      <SetENOAutomatically>false</SetENOAutomatically>
+      <UDABlockProperties />
+      <UDAEnableTagReadback>false</UDAEnableTagReadback>
+    </AttributeList>
+    <ObjectList>
+      <MultilingualText ID="1" CompositionName="Comment">
+        <ObjectList>
+          <MultilingualTextItem ID="2" CompositionName="Items">
+            <AttributeList>
+              <Culture>zh-CN</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="3" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-GB</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="4" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+      <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource><StructuredText xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/StructuredText/v3">
+  <Access Scope="LocalVariable" UId="21">
+    <Symbol UId="22">
+      <Component Name="HMI" UId="23" />
+      <Token Text="." UId="24" />
+      <Component Name="OpenNumber" UId="25" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="26" />
+  <Token Text=":=" UId="27" />
+  <Blank Num="1" UId="28" />
+  <Access Scope="GlobalVariable" UId="29">
+    <Symbol UId="30">
+      <Component Name="DB10181_RecipeData" UId="31" />
+      <Token Text="." UId="32" />
+      <Component Name="SetUp" UId="33" />
+      <Token Text="." UId="34" />
+      <Component Name="WeldRecipe" UId="35" />
+    </Symbol>
+  </Access>
+  <Token Text=";" UId="36" />
+  <NewLine Num="1" UId="37" />
+  <Access Scope="Call" UId="38">
+    <CallInfo UId="39" BlockType="FC">
+      <Instance Scope="GlobalVariable" UId="41">
+        <Component Name="FC8000_BlockMove" UId="40" />
+      </Instance>
+      <Token Text="(" UId="42" />
+      <Parameter Name="pSrc" UId="43">
+        <Blank Num="1" UId="44" />
+        <Token Text=":=" UId="45" />
+        <Blank Num="1" UId="46" />
+        <Access Scope="GlobalVariable" UId="47">
+          <Symbol UId="48">
+            <Component Name="DB10181_RecipeData" UId="49" />
+            <Token Text="." UId="50" />
+            <Component Name="SetUp" UId="51" />
+            <Token Text="." UId="52" />
+            <Component Name="Name" UId="53" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="54" />
+      <NewLine Num="1" UId="55" />
+      <Blank Num="19" UId="56" />
+      <Parameter Name="SrcOffSetByte" UId="57">
+        <Blank Num="1" UId="58" />
+        <Token Text=":=" UId="59" />
+        <Blank Num="1" UId="60" />
+        <Access Scope="LiteralConstant" UId="61">
+          <Constant UId="62">
+            <ConstantValue UId="64">0</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="65" />
+      <NewLine Num="1" UId="66" />
+      <Blank Num="19" UId="67" />
+      <Parameter Name="pDest" UId="68">
+        <Blank Num="1" UId="69" />
+        <Token Text=":=" UId="70" />
+        <Blank Num="1" UId="71" />
+        <Access Scope="LocalVariable" UId="72">
+          <Symbol UId="73">
+            <Component Name="HMI" UId="74" />
+            <Token Text="." UId="75" />
+            <Component Name="OpenNumberText" UId="76" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="77" />
+      <NewLine Num="1" UId="78" />
+      <Blank Num="19" UId="79" />
+      <Parameter Name="DestOffSetByte" UId="80">
+        <Blank Num="1" UId="81" />
+        <Token Text=":=" UId="82" />
+        <Blank Num="1" UId="83" />
+        <Access Scope="LiteralConstant" UId="84">
+          <Constant UId="85">
+            <ConstantValue UId="87">0</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="88" />
+      <NewLine Num="1" UId="89" />
+      <Blank Num="19" UId="90" />
+      <Parameter Name="Buff_len" UId="91">
+        <Blank Num="1" UId="92" />
+        <Token Text=":=" UId="93" />
+        <Blank Num="1" UId="94" />
+        <Access Scope="LiteralConstant" UId="95">
+          <Constant UId="96">
+            <ConstantValue UId="98">24</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="99" />
+      <NewLine Num="1" UId="100" />
+      <Blank Num="19" UId="101" />
+      <Parameter Name="RET_done" UId="102">
+        <Blank Num="1" UId="103" />
+        <Token Text="=&gt;" UId="104" />
+        <Blank Num="1" UId="105" />
+        <Access Scope="LocalVariable" UId="106">
+          <Symbol UId="107">
+            <Component Name="RetVal1" UId="108" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="109" />
+    </CallInfo>
+  </Access>
+  <Token Text=";" UId="110" />
+  <NewLine Num="1" UId="111" />
+  <LineComment Inserted="false" NoClosingBracket="false" UId="112">
+    <Text UId="113">以下所有无需修改</Text>
+  </LineComment>
+  <NewLine Num="1" UId="114" />
+  <Access Scope="LocalVariable" UId="115">
+    <Symbol UId="116">
+      <Component Name="RetVal5" UId="117" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="118" />
+  <Token Text=":=" UId="119" />
+  <Blank Num="1" UId="120" />
+  <Access Scope="LiteralConstant" UId="121">
+    <Constant UId="122">
+      <ConstantValue UId="124">0</ConstantValue>
+    </Constant>
+  </Access>
+  <Token Text=";" UId="125" />
+  <NewLine Num="1" UId="126" />
+  <Token Text="IF" UId="127" />
+  <Blank Num="1" UId="128" />
+  <Access Scope="LocalVariable" UId="129">
+    <Symbol UId="130">
+      <Component Name="HMI" UId="131" />
+      <Token Text="." UId="132" />
+      <Component Name="New" UId="133" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="134" />
+  <Token Text="THEN" UId="135" />
+  <Blank Num="29" UId="136" />
+  <LineComment Inserted="false" NoClosingBracket="false" UId="137">
+    <Text UId="138">删除配方/New Recipe</Text>
+  </LineComment>
+  <NewLine Num="1" UId="139" />
+  <Blank Num="4" UId="140" />
+  <Access Scope="LocalVariable" UId="141">
+    <Symbol UId="142">
+      <Component Name="RetVal1" UId="143" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="144" />
+  <Token Text=":=" UId="145" />
+  <Blank Num="1" UId="146" />
+  <Access Scope="Call" UId="147">
+    <Instruction Name="FILL" UId="148">
+      <Token Text="(" UId="149" />
+      <Parameter Name="BVAL" UId="150">
+        <Blank Num="1" UId="151" />
+        <Token Text=":=" UId="152" />
+        <Blank Num="1" UId="153" />
+        <Access Scope="LocalVariable" UId="154">
+          <Symbol UId="155">
+            <Component Name="RetVal5" UId="156" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="157" />
+      <Blank Num="1" UId="158" />
+      <Parameter Name="BLK" UId="159">
+        <Blank Num="1" UId="160" />
+        <Token Text="=&gt;" UId="161" />
+        <Blank Num="1" UId="162" />
+        <Access Scope="GlobalVariable" UId="163">
+          <Symbol UId="164">
+            <Component Name="DB10181_RecipeData" UId="165" />
+            <Token Text="." UId="166" />
+            <Component Name="Axis" UId="167" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="169" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="170" />
+  <NewLine Num="1" UId="171" />
+  <Blank Num="4" UId="172" />
+  <Access Scope="LocalVariable" UId="173">
+    <Symbol UId="174">
+      <Component Name="RetVal2" UId="175" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="176" />
+  <Token Text=":=" UId="177" />
+  <Blank Num="1" UId="178" />
+  <Access Scope="Call" UId="179">
+    <Instruction Name="FILL" UId="180">
+      <Token Text="(" UId="181" />
+      <Parameter Name="BVAL" UId="182">
+        <Blank Num="1" UId="183" />
+        <Token Text=":=" UId="184" />
+        <Blank Num="1" UId="185" />
+        <Access Scope="LocalVariable" UId="186">
+          <Symbol UId="187">
+            <Component Name="RetVal5" UId="188" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="189" />
+      <Blank Num="1" UId="190" />
+      <Parameter Name="BLK" UId="191">
+        <Blank Num="1" UId="192" />
+        <Token Text="=&gt;" UId="193" />
+        <Blank Num="1" UId="194" />
+        <Access Scope="GlobalVariable" UId="195">
+          <Symbol UId="196">
+            <Component Name="DB10181_RecipeData" UId="197" />
+            <Token Text="." UId="198" />
+            <Component Name="SetUp" UId="199" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="201" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="202" />
+  <NewLine Num="1" UId="203" />
+  <Blank Num="4" UId="204" />
+  <Access Scope="LocalVariable" UId="205">
+    <Symbol UId="206">
+      <Component Name="HMI" UId="207" />
+      <Token Text="." UId="208" />
+      <Component Name="New" UId="209" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="210" />
+  <Token Text=":=" UId="211" />
+  <Blank Num="1" UId="212" />
+  <Access Scope="LiteralConstant" UId="213">
+    <Constant UId="214">
+      <ConstantValue UId="216">0</ConstantValue>
+    </Constant>
+  </Access>
+  <Token Text=";" UId="217" />
+  <NewLine Num="1" UId="218" />
+  <Token Text="END_IF" UId="219" />
+  <Token Text=";" UId="220" />
+  <NewLine Num="2" UId="221" />
+  <Token Text="IF" UId="222" />
+  <Blank Num="1" UId="223" />
+  <Access Scope="LocalVariable" UId="224">
+    <Symbol UId="225">
+      <Component Name="HMI" UId="226" />
+      <Token Text="." UId="227" />
+      <Component Name="Open" UId="228" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="229" />
+  <Token Text="THEN" UId="230" />
+  <Blank Num="28" UId="231" />
+  <LineComment Inserted="false" NoClosingBracket="false" UId="232">
+    <Text UId="233">打开配方/Open Recipe</Text>
+  </LineComment>
+  <NewLine Num="1" UId="234" />
+  <Blank Num="4" UId="235" />
+  <Access Scope="LocalVariable" UId="236">
+    <Symbol UId="237">
+      <Component Name="RetVal1" UId="238" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="239" />
+  <Token Text=":=" UId="240" />
+  <Blank Num="1" UId="241" />
+  <Access Scope="Call" UId="242">
+    <Instruction Name="READ_DBL" UId="243">
+      <Token Text="(" UId="244" />
+      <Parameter Name="REQ" UId="245">
+        <Blank Num="1" UId="246" />
+        <Token Text=":=" UId="247" />
+        <Blank Num="1" UId="248" />
+        <Access Scope="LocalVariable" UId="249">
+          <Symbol UId="250">
+            <Component Name="HMI" UId="251" />
+            <Token Text="." UId="252" />
+            <Component Name="Open" UId="253" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="254" />
+      <Blank Num="1" UId="255" />
+      <Parameter Name="SRCBLK" UId="256">
+        <Blank Num="1" UId="257" />
+        <Token Text=":=" UId="258" />
+        <Blank Num="1" UId="259" />
+        <Access Scope="GlobalVariable" UId="260">
+          <Symbol UId="261">
+            <Component Name="DB10000_A18_Recipe" UId="262" />
+            <Token Text="." UId="263" />
+            <Component Name="Recipe" UId="264">
+              <Token Text="[" UId="265" />
+              <Access Scope="LocalVariable" UId="266">
+                <Symbol UId="267">
+                  <Component Name="HMI" UId="268" />
+                  <Token Text="." UId="269" />
+                  <Component Name="RecipeNumber" UId="270" />
+                </Symbol>
+              </Access>
+              <Token Text="]" UId="271" />
+            </Component>
+            <Token Text="." UId="272" />
+            <Component Name="Axis" UId="273" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="274" />
+      <Blank Num="1" UId="275" />
+      <Parameter Name="BUSY" UId="276">
+        <Blank Num="1" UId="277" />
+        <Token Text="=&gt;" UId="278" />
+        <Blank Num="1" UId="279" />
+        <Access Scope="LocalVariable" UId="280">
+          <Symbol UId="281">
+            <Component Name="RetVal3" UId="282" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="283" />
+      <Blank Num="1" UId="284" />
+      <Parameter Name="DSTBLK" UId="285">
+        <Blank Num="1" UId="286" />
+        <Token Text="=&gt;" UId="287" />
+        <Blank Num="1" UId="288" />
+        <Access Scope="GlobalVariable" UId="289">
+          <Symbol UId="290">
+            <Component Name="DB10181_RecipeData" UId="291" />
+            <Token Text="." UId="292" />
+            <Component Name="Axis" UId="293" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="295" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="296" />
+  <NewLine Num="1" UId="297" />
+  <Blank Num="4" UId="298" />
+  <Access Scope="LocalVariable" UId="299">
+    <Symbol UId="300">
+      <Component Name="RetVal2" UId="301" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="302" />
+  <Token Text=":=" UId="303" />
+  <Blank Num="1" UId="304" />
+  <Access Scope="Call" UId="305">
+    <Instruction Name="READ_DBL" UId="306">
+      <Token Text="(" UId="307" />
+      <Parameter Name="REQ" UId="308">
+        <Blank Num="1" UId="309" />
+        <Token Text=":=" UId="310" />
+        <Blank Num="1" UId="311" />
+        <Access Scope="LocalVariable" UId="312">
+          <Symbol UId="313">
+            <Component Name="HMI" UId="314" />
+            <Token Text="." UId="315" />
+            <Component Name="Open" UId="316" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="317" />
+      <Blank Num="1" UId="318" />
+      <Parameter Name="SRCBLK" UId="319">
+        <Blank Num="1" UId="320" />
+        <Token Text=":=" UId="321" />
+        <Blank Num="1" UId="322" />
+        <Access Scope="GlobalVariable" UId="323">
+          <Symbol UId="324">
+            <Component Name="DB10000_A18_Recipe" UId="325" />
+            <Token Text="." UId="326" />
+            <Component Name="Recipe" UId="327">
+              <Token Text="[" UId="328" />
+              <Access Scope="LocalVariable" UId="329">
+                <Symbol UId="330">
+                  <Component Name="HMI" UId="331" />
+                  <Token Text="." UId="332" />
+                  <Component Name="RecipeNumber" UId="333" />
+                </Symbol>
+              </Access>
+              <Token Text="]" UId="334" />
+            </Component>
+            <Token Text="." UId="335" />
+            <Component Name="SetUp" UId="336" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="337" />
+      <Blank Num="1" UId="338" />
+      <Parameter Name="BUSY" UId="339">
+        <Blank Num="1" UId="340" />
+        <Token Text="=&gt;" UId="341" />
+        <Blank Num="1" UId="342" />
+        <Access Scope="LocalVariable" UId="343">
+          <Symbol UId="344">
+            <Component Name="RetVal4" UId="345" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="346" />
+      <Blank Num="1" UId="347" />
+      <Parameter Name="DSTBLK" UId="348">
+        <Blank Num="1" UId="349" />
+        <Token Text="=&gt;" UId="350" />
+        <Blank Num="1" UId="351" />
+        <Access Scope="GlobalVariable" UId="352">
+          <Symbol UId="353">
+            <Component Name="DB10181_RecipeData" UId="354" />
+            <Token Text="." UId="355" />
+            <Component Name="SetUp" UId="356" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="358" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="359" />
+  <NewLine Num="1" UId="360" />
+  <Blank Num="4" UId="361" />
+  <Token Text="IF" UId="362" />
+  <Blank Num="1" UId="363" />
+  <Token Text="NOT" UId="364" />
+  <Blank Num="1" UId="365" />
+  <Access Scope="LocalVariable" UId="366">
+    <Symbol UId="367">
+      <Component Name="RetVal3" UId="368" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="369" />
+  <Token Text="AND" UId="370" />
+  <Blank Num="1" UId="371" />
+  <Token Text="NOT" UId="372" />
+  <Blank Num="1" UId="373" />
+  <Access Scope="LocalVariable" UId="374">
+    <Symbol UId="375">
+      <Component Name="RetVal4" UId="376" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="377" />
+  <Token Text="THEN" UId="378" />
+  <NewLine Num="1" UId="379" />
+  <Blank Num="8" UId="380" />
+  <Access Scope="LocalVariable" UId="381">
+    <Symbol UId="382">
+      <Component Name="HMI" UId="383" />
+      <Token Text="." UId="384" />
+      <Component Name="Open" UId="385" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="386" />
+  <Token Text=":=" UId="387" />
+  <Blank Num="1" UId="388" />
+  <Access Scope="LiteralConstant" UId="389">
+    <Constant UId="390">
+      <ConstantValue UId="392">0</ConstantValue>
+    </Constant>
+  </Access>
+  <Token Text=";" UId="393" />
+  <NewLine Num="1" UId="394" />
+  <Blank Num="4" UId="395" />
+  <Token Text="END_IF" UId="396" />
+  <Token Text=";" UId="397" />
+  <NewLine Num="1" UId="398" />
+  <Token Text="END_IF" UId="399" />
+  <Token Text=";" UId="400" />
+  <NewLine Num="2" UId="401" />
+  <Token Text="IF" UId="402" />
+  <Blank Num="1" UId="403" />
+  <Access Scope="LocalVariable" UId="404">
+    <Symbol UId="405">
+      <Component Name="HMI" UId="406" />
+      <Token Text="." UId="407" />
+      <Component Name="Save" UId="408" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="409" />
+  <Token Text="THEN" UId="410" />
+  <Blank Num="12" UId="411" />
+  <LineComment Inserted="false" NoClosingBracket="false" UId="412">
+    <Text UId="413">保存配方/Save Recipe</Text>
+  </LineComment>
+  <NewLine Num="1" UId="414" />
+  <Blank Num="4" UId="415" />
+  <Access Scope="GlobalVariable" UId="416">
+    <Symbol UId="417">
+      <Component Name="DB10181_RecipeData" UId="418" />
+      <Token Text="." UId="419" />
+      <Component Name="SetUp" UId="420" />
+      <Token Text="." UId="421" />
+      <Component Name="WeldRecipe" UId="422" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="423" />
+  <Token Text=":=" UId="424" />
+  <Blank Num="1" UId="425" />
+  <Access Scope="LocalVariable" UId="426">
+    <Symbol UId="427">
+      <Component Name="HMI" UId="428" />
+      <Token Text="." UId="429" />
+      <Component Name="RecipeNumber" UId="430" />
+    </Symbol>
+  </Access>
+  <Token Text=";" UId="431" />
+  <NewLine Num="1" UId="432" />
+  <Blank Num="4" UId="433" />
+  <Access Scope="LocalVariable" UId="434">
+    <Symbol UId="435">
+      <Component Name="HMI" UId="436" />
+      <Token Text="." UId="437" />
+      <Component Name="DownloadNumber" UId="438" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="439" />
+  <Token Text=":=" UId="440" />
+  <Blank Num="1" UId="441" />
+  <Access Scope="LocalVariable" UId="442">
+    <Symbol UId="443">
+      <Component Name="HMI" UId="444" />
+      <Token Text="." UId="445" />
+      <Component Name="RecipeNumber" UId="446" />
+    </Symbol>
+  </Access>
+  <Token Text=";" UId="447" />
+  <NewLine Num="1" UId="448" />
+  <Blank Num="4" UId="449" />
+  <Access Scope="Call" UId="450">
+    <CallInfo UId="451" BlockType="FC">
+      <Instance Scope="GlobalVariable" UId="453">
+        <Component Name="FC8000_BlockMove" UId="452" />
+      </Instance>
+      <Token Text="(" UId="454" />
+      <Parameter Name="pSrc" UId="455">
+        <Blank Num="1" UId="456" />
+        <Token Text=":=" UId="457" />
+        <Blank Num="1" UId="458" />
+        <Access Scope="LocalVariable" UId="459">
+          <Symbol UId="460">
+            <Component Name="HMI" UId="461" />
+            <Token Text="." UId="462" />
+            <Component Name="DownloadNumberText" UId="463" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="464" />
+      <NewLine Num="1" UId="465" />
+      <Blank Num="23" UId="466" />
+      <Parameter Name="SrcOffSetByte" UId="467">
+        <Blank Num="1" UId="468" />
+        <Token Text=":=" UId="469" />
+        <Blank Num="1" UId="470" />
+        <Access Scope="LiteralConstant" UId="471">
+          <Constant UId="472">
+            <ConstantValue UId="474">0</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="475" />
+      <NewLine Num="1" UId="476" />
+      <Blank Num="23" UId="477" />
+      <Parameter Name="pDest" UId="478">
+        <Blank Num="1" UId="479" />
+        <Token Text=":=" UId="480" />
+        <Blank Num="1" UId="481" />
+        <Access Scope="GlobalVariable" UId="482">
+          <Symbol UId="483">
+            <Component Name="DB10181_RecipeData" UId="484" />
+            <Token Text="." UId="485" />
+            <Component Name="SetUp" UId="486" />
+            <Token Text="." UId="487" />
+            <Component Name="Name" UId="488" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="489" />
+      <NewLine Num="1" UId="490" />
+      <Blank Num="23" UId="491" />
+      <Parameter Name="DestOffSetByte" UId="492">
+        <Blank Num="1" UId="493" />
+        <Token Text=":=" UId="494" />
+        <Blank Num="1" UId="495" />
+        <Access Scope="LiteralConstant" UId="496">
+          <Constant UId="497">
+            <ConstantValue UId="499">0</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="500" />
+      <NewLine Num="1" UId="501" />
+      <Blank Num="23" UId="502" />
+      <Parameter Name="Buff_len" UId="503">
+        <Blank Num="1" UId="504" />
+        <Token Text=":=" UId="505" />
+        <Blank Num="1" UId="506" />
+        <Access Scope="LiteralConstant" UId="507">
+          <Constant UId="508">
+            <ConstantValue UId="510">24</ConstantValue>
+          </Constant>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="511" />
+      <NewLine Num="1" UId="512" />
+      <Blank Num="23" UId="513" />
+      <Parameter Name="RET_done" UId="514">
+        <Blank Num="1" UId="515" />
+        <Token Text="=&gt;" UId="516" />
+        <Blank Num="1" UId="517" />
+        <Access Scope="LocalVariable" UId="518">
+          <Symbol UId="519">
+            <Component Name="RetVal1" UId="520" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="521" />
+    </CallInfo>
+  </Access>
+  <Token Text=";" UId="522" />
+  <NewLine Num="1" UId="523" />
+  <Blank Num="4" UId="524" />
+  <Access Scope="LocalVariable" UId="525">
+    <Symbol UId="526">
+      <Component Name="RetVal1" UId="527" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="528" />
+  <Token Text=":=" UId="529" />
+  <Blank Num="1" UId="530" />
+  <Access Scope="Call" UId="531">
+    <Instruction Name="WRIT_DBL" UId="532">
+      <Token Text="(" UId="533" />
+      <Parameter Name="REQ" UId="534">
+        <Blank Num="1" UId="535" />
+        <Token Text=":=" UId="536" />
+        <Blank Num="1" UId="537" />
+        <Access Scope="LocalVariable" UId="538">
+          <Symbol UId="539">
+            <Component Name="HMI" UId="540" />
+            <Token Text="." UId="541" />
+            <Component Name="Save" UId="542" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Blank Num="2" UId="543" />
+      <Token Text="," UId="544" />
+      <Blank Num="1" UId="545" />
+      <Parameter Name="SRCBLK" UId="546">
+        <Blank Num="1" UId="547" />
+        <Token Text=":=" UId="548" />
+        <Blank Num="1" UId="549" />
+        <Access Scope="GlobalVariable" UId="550">
+          <Symbol UId="551">
+            <Component Name="DB10181_RecipeData" UId="552" />
+            <Token Text="." UId="553" />
+            <Component Name="Axis" UId="554" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="555" />
+      <Blank Num="1" UId="556" />
+      <Parameter Name="BUSY" UId="557">
+        <Blank Num="1" UId="558" />
+        <Token Text="=&gt;" UId="559" />
+        <Blank Num="1" UId="560" />
+        <Access Scope="LocalVariable" UId="561">
+          <Symbol UId="562">
+            <Component Name="RetVal3" UId="563" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="564" />
+      <Blank Num="1" UId="565" />
+      <Parameter Name="DSTBLK" UId="566">
+        <Blank Num="1" UId="567" />
+        <Token Text="=&gt;" UId="568" />
+        <Blank Num="1" UId="569" />
+        <Access Scope="GlobalVariable" UId="570">
+          <Symbol UId="571">
+            <Component Name="DB10000_A18_Recipe" UId="572" />
+            <Token Text="." UId="573" />
+            <Component Name="Recipe" UId="574">
+              <Token Text="[" UId="575" />
+              <Access Scope="LocalVariable" UId="576">
+                <Symbol UId="577">
+                  <Component Name="HMI" UId="578" />
+                  <Token Text="." UId="579" />
+                  <Component Name="RecipeNumber" UId="580" />
+                </Symbol>
+              </Access>
+              <Token Text="]" UId="581" />
+            </Component>
+            <Token Text="." UId="582" />
+            <Component Name="Axis" UId="583" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="585" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="586" />
+  <NewLine Num="1" UId="587" />
+  <Blank Num="4" UId="588" />
+  <Access Scope="LocalVariable" UId="589">
+    <Symbol UId="590">
+      <Component Name="RetVal2" UId="591" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="592" />
+  <Token Text=":=" UId="593" />
+  <Blank Num="1" UId="594" />
+  <Access Scope="Call" UId="595">
+    <Instruction Name="WRIT_DBL" UId="596">
+      <Token Text="(" UId="597" />
+      <Parameter Name="REQ" UId="598">
+        <Blank Num="1" UId="599" />
+        <Token Text=":=" UId="600" />
+        <Blank Num="1" UId="601" />
+        <Access Scope="LocalVariable" UId="602">
+          <Symbol UId="603">
+            <Component Name="HMI" UId="604" />
+            <Token Text="." UId="605" />
+            <Component Name="Save" UId="606" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="607" />
+      <Blank Num="1" UId="608" />
+      <Parameter Name="SRCBLK" UId="609">
+        <Blank Num="1" UId="610" />
+        <Token Text=":=" UId="611" />
+        <Blank Num="1" UId="612" />
+        <Access Scope="GlobalVariable" UId="613">
+          <Symbol UId="614">
+            <Component Name="DB10181_RecipeData" UId="615" />
+            <Token Text="." UId="616" />
+            <Component Name="SetUp" UId="617" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="618" />
+      <Blank Num="1" UId="619" />
+      <Parameter Name="BUSY" UId="620">
+        <Blank Num="1" UId="621" />
+        <Token Text="=&gt;" UId="622" />
+        <Blank Num="1" UId="623" />
+        <Access Scope="LocalVariable" UId="624">
+          <Symbol UId="625">
+            <Component Name="RetVal4" UId="626" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text="," UId="627" />
+      <Blank Num="1" UId="628" />
+      <Parameter Name="DSTBLK" UId="629">
+        <Blank Num="1" UId="630" />
+        <Token Text="=&gt;" UId="631" />
+        <Blank Num="1" UId="632" />
+        <Access Scope="GlobalVariable" UId="633">
+          <Symbol UId="634">
+            <Component Name="DB10000_A18_Recipe" UId="635" />
+            <Token Text="." UId="636" />
+            <Component Name="Recipe" UId="637">
+              <Token Text="[" UId="638" />
+              <Access Scope="LocalVariable" UId="639">
+                <Symbol UId="640">
+                  <Component Name="HMI" UId="641" />
+                  <Token Text="." UId="642" />
+                  <Component Name="RecipeNumber" UId="643" />
+                </Symbol>
+              </Access>
+              <Token Text="]" UId="644" />
+            </Component>
+            <Token Text="." UId="645" />
+            <Component Name="SetUp" UId="646" />
+          </Symbol>
+        </Access>
+      </Parameter>
+      <Token Text=")" UId="648" />
+    </Instruction>
+  </Access>
+  <Token Text=";" UId="649" />
+  <NewLine Num="1" UId="650" />
+  <Blank Num="4" UId="651" />
+  <Token Text="IF" UId="652" />
+  <Blank Num="1" UId="653" />
+  <Token Text="NOT" UId="654" />
+  <Blank Num="1" UId="655" />
+  <Access Scope="LocalVariable" UId="656">
+    <Symbol UId="657">
+      <Component Name="RetVal3" UId="658" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="659" />
+  <Token Text="AND" UId="660" />
+  <Blank Num="1" UId="661" />
+  <Token Text="NOT" UId="662" />
+  <Blank Num="1" UId="663" />
+  <Access Scope="LocalVariable" UId="664">
+    <Symbol UId="665">
+      <Component Name="RetVal4" UId="666" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="667" />
+  <Token Text="THEN" UId="668" />
+  <NewLine Num="1" UId="669" />
+  <Blank Num="8" UId="670" />
+  <Access Scope="LocalVariable" UId="671">
+    <Symbol UId="672">
+      <Component Name="HMI" UId="673" />
+      <Token Text="." UId="674" />
+      <Component Name="Open" UId="675" />
+    </Symbol>
+  </Access>
+  <Blank Num="1" UId="676" />
+  <Token Text=":=" UId="677" />
+  <Blank Num="1" UId="678" />
+  <Access Scope="LiteralConstant" UId="679">
+    <Constant UId="680">
+      <ConstantValue UId="682">0</ConstantValue>
+    </Constant>
+  </Access>
+  <Token Text=";" UId="683" />
+  <NewLine Num="1" UId="684" />
+  <Blank Num="4" UId="685" />
+  <Token Text="END_IF" UId="686" />
+  <Token Text=";" UId="687" />
+  <NewLine Num="1" UId="688" />
+  <Token Text="END_IF" UId="689" />
+  <Token Text=";" UId="690" />
+  <NewLine Num="3" UId="691" />
+</StructuredText></NetworkSource>
+          <ProgrammingLanguage>SCL</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="6" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="7" CompositionName="Items">
+                <AttributeList>
+                  <Culture>zh-CN</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="8" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-GB</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="9" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="A" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="B" CompositionName="Items">
+                <AttributeList>
+                  <Culture>zh-CN</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="C" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-GB</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+              <MultilingualTextItem ID="D" CompositionName="Items">
+                <AttributeList>
+                  <Culture>de-DE</Culture>
+                  <Text />
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <MultilingualText ID="E" CompositionName="Title">
+        <ObjectList>
+          <MultilingualTextItem ID="F" CompositionName="Items">
+            <AttributeList>
+              <Culture>zh-CN</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="10" CompositionName="Items">
+            <AttributeList>
+              <Culture>en-GB</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+          <MultilingualTextItem ID="11" CompositionName="Items">
+            <AttributeList>
+              <Culture>de-DE</Culture>
+              <Text />
+            </AttributeList>
+          </MultilingualTextItem>
+        </ObjectList>
+      </MultilingualText>
+    </ObjectList>
+  </SW.Blocks.FB>
+</Document>

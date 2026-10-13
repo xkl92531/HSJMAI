@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>HsjmTia.App</RootNamespace>
+    <AssemblyName>HsjmTia.App</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../HsjmTia.Core/HsjmTia.Core.csproj" />
+    <ProjectReference Include="../HsjmTia.Openness/HsjmTia.Openness.csproj" />
+  </ItemGroup>
+  <!-- 界面用 BackendClient 走 HttpClient 连后端；net48 下需要显式声明这个框架引用，
+       与 HsjmTia.Cli.csproj 的做法一致。本项目不直接使用 Siemens.Engineering 的任何类型——
+       TiaSession/BlockExporter/TagExporter/UdtExporter 全部被 HsjmTia.Openness.ExportOrchestrator
+       包起来了，界面只经由纯 Core 类型（string/OpennessInstallation/AnalyzerRuntime/ExportRunResult）
+       调用它，因此不需要像 HsjmTia.Cli 那样额外声明 Siemens.Engineering 的编译期引用。 -->
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <!-- 与 HsjmTia.Cli.csproj 保持一致：构建时把后端 plc-analyzer 同步进 runtime/，
+       供 AnalyzerRuntime.Resolve 找到内嵌解析器。开发机没装 git 时脚本会失败，
+       ContinueOnError 保证构建仍然成功，只是没有本地解析能力（记成 CapabilityMissing 缺口）。 -->
+  <Target Name="SyncAnalyzer" BeforeTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\build\sync-analyzer.ps1&quot;"
+          ContinueOnError="true" />
+  </Target>
+</Project>

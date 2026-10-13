@@ -1,0 +1,58 @@
+export default {
+  'zh-cn': {
+    blockInterface: {
+      title: '接口变量',
+      variableName: '变量名',
+      variableNamePlaceholder: '请输入变量名',
+      dataType: '数据类型',
+      dataTypePlaceholder: '请输入数据类型',
+      fullPath: '全路径',
+      offset: '偏移',
+      scope: '作用域',
+      initialValue: '初始值',
+      comment: '注释',
+    },
+  },
+  'zh-tw': {
+    blockInterface: {
+      title: '介面變數',
+      variableName: '變數名',
+      variableNamePlaceholder: '請輸入變數名',
+      dataType: '資料類型',
+      dataTypePlaceholder: '請輸入資料類型',
+      fullPath: '全路徑',
+      offset: '偏移',
+      scope: '作用域',
+      initialValue: '初始值',
+      comment: '註釋',
+    },
+  },
+  'en': {
+    blockInterface: {
+      title: 'Interface Variables',
+      variableName: 'Variable Name',
+      variableNamePlaceholder: 'Enter variable name',
+      dataType: 'Data Type',
+      dataTypePlaceholder: 'Enter data type',
+      fullPath: 'Full Path',
+      offset: 'Offset',
+      scope: 'Scope',
+      initialValue: 'Initial Value',
+      comment: 'Comment',
+    },
+  },
+  'ja': {
+    blockInterface: {
+      title: 'インターフェース変数',
+      variableName: '変数名',
+      variableNamePlaceholder: '変数名を入力してください',
+      dataType: 'データ型',
+      dataTypePlaceholder: 'データ型を入力してください',
+      fullPath: 'フルパス',
+      offset: 'オフセット',
+      scope: 'スコープ',
+      initialValue: '初期値',
+      comment: 'コメント',
+    },
+  },
+}

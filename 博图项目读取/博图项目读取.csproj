@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{C9F39037-51A7-4BFB-904E-7CF9A5B1AC5D}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>博图项目读取</RootNamespace>
+    <AssemblyName>博图项目读取</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <LangVersion>8.0</LangVersion>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <!-- TIA Portal Openness SDK 自动探测：本地版本文件夹优先（明确锁定目标版本），其次本机已安装的 TIA Portal PublicAPI。
+       ⚠ Openness 不跨大版本兼容：引用哪个版本的 Siemens.Engineering.dll，运行程序的机器就必须装同一大版本的 TIA Portal，
+       否则首次调用 TiaPortal.GetProcesses() 即抛 TiaPortalAccess 类型初始值设定项异常。
+       用法：把目标机 TIA 版本对应的 PublicAPI 两个 DLL（Siemens.Engineering.dll / Siemens.Engineering.Hmi.dll）
+       拷入下面对应版本的文件夹（如 V20 → 20dll\）即可自动引用。 -->
+  <PropertyGroup>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('$(MSBuildProjectDirectory)\20dll\Siemens.Engineering.dll')">$(MSBuildProjectDirectory)\20dll</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('$(MSBuildProjectDirectory)\19dll\Siemens.Engineering.dll')">$(MSBuildProjectDirectory)\19dll</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('$(MSBuildProjectDirectory)\18dll\Siemens.Engineering.dll')">$(MSBuildProjectDirectory)\18dll</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V19\PublicAPI\V19\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V19\PublicAPI\V19</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V18\PublicAPI\V18\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V18\PublicAPI\V18</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V17\PublicAPI\V17\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V17\PublicAPI\V17</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V16\PublicAPI\V16\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V16\PublicAPI\V16</TiaSdkDir>
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('C:\Program Files\Siemens\Automation\Portal V15.1\PublicAPI\V15.1\Siemens.Engineering.dll')">C:\Program Files\Siemens\Automation\Portal V15.1\PublicAPI\V15.1</TiaSdkDir>
+    <!-- 旧机器自定义安装路径兜底 -->
+    <TiaSdkDir Condition="'$(TiaSdkDir)' == '' AND Exists('E:\botu\Portal V16\PublicAPI\V16\Siemens.Engineering.dll')">E:\botu\Portal V16\PublicAPI\V16</TiaSdkDir>
+    <!-- 探测到 SDK 才定义 TIA_PORTAL_AVAILABLE；探不到则编译为"无 SDK 提示版"（可正常编译运行，连接时给出明确提示） -->
+    <TiaPortalAvailable Condition="'$(TiaSdkDir)' != ''">TIA_PORTAL_AVAILABLE</TiaPortalAvailable>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE;$(TiaPortalAvailable)</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE;$(TiaPortalAvailable)</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>20dll\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Siemens.Engineering" Condition="'$(TiaSdkDir)' != ''">
+      <HintPath>$(TiaSdkDir)\Siemens.Engineering.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Siemens.Engineering.Hmi" Condition="'$(TiaSdkDir)' != '' AND Exists('$(TiaSdkDir)\Siemens.Engineering.Hmi.dll')">
+      <HintPath>$(TiaSdkDir)\Siemens.Engineering.Hmi.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <!-- 旧的 V16/V15.1 条件备用引用已并入上方 TiaSdkDir 自动探测逻辑 -->
+  <ItemGroup>
+    <Compile Include="Form1.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Designer.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+    </Compile>
+    <Compile Include="LogHelper.cs" />
+    <Compile Include="Models\TiaPortalProject.cs" />
+    <Compile Include="Services\Parsers\BaseBlockParser.cs" />
+    <Compile Include="Services\Parsers\BlockParserFactory.cs" />
+    <Compile Include="Services\Parsers\FBDParser.cs" />
+    <Compile Include="Services\Parsers\GraphParser.cs" />
+    <Compile Include="Services\Parsers\IBlockParser.cs" />
+    <Compile Include="Services\Parsers\LadderParser.cs" />
+    <Compile Include="Services\Parsers\SCLParser.cs" />
+    <Compile Include="Services\Parsers\STLParser.cs" />
+    <Compile Include="Services\TiaPortalService.cs" />
+    <Compile Include="Services\BusinessLogicConverter.cs" />
+    <Compile Include="Services\ProjectExportService.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="Form1.resx">
+      <DependentUpon>Form1.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <None Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="xml示例\DB.xml" />
+    <Content Include="xml示例\Graph.xml" />
+    <Content Include="xml示例\LAD.xml" />
+    <Content Include="xml示例\SCL.xml" />
+    <Content Include="xml示例\STL.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="18dll\" />
+    <Folder Include="19dll\" />
+    <Folder Include="20dll\" />
+  </ItemGroup>
+  <Target Name="WarnNoTiaSdk" BeforeTargets="BeforeBuild" Condition="'$(TiaSdkDir)' == ''">
+    <Warning Text="未找到 TIA Portal Openness SDK（20dll/19dll/18dll 及本机已安装的 Portal V15.1~V20 PublicAPI 均无 Siemens.Engineering.dll）：本次编译为无 SDK 提示版。目标机为 TIA Portal V20 时，请把远程机 C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\ 下的 Siemens.Engineering.dll 与 Siemens.Engineering.Hmi.dll 拷入本项目 20dll\ 文件夹后重新编译。" />
+  </Target>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

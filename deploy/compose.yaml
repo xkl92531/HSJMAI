@@ -1,0 +1,60 @@
+name: hsjm-ai
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  api:
+    image: hsjm-ai-api:${HSJM_VERSION:?HSJM_VERSION is supplied by the deployment scripts}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Direct "urls" overrides the legacy 2405 value in appsettings.json.
+      # ASPNETCORE_URLS has lower host-config priority than appsettings here.
+      urls: http://+:${HSJM_HTTP_PORT:?start.sh selects a free host port}
+      TZ: ${HSJM_TIME_ZONE:-Asia/Shanghai}
+      PythonPath: /opt/venv/bin/python
+      AI__ExternalTools__PythonPath: /opt/venv/bin/python
+      McpDiagnosisRegistration__Enabled: "true"
+      McpDiagnosisRegistration__Endpoint: http://127.0.0.1:${HSJM_HTTP_PORT:?start.sh selects a free host port}/mcp
+      # On the 192.168.6.75 target, host networking lets the API use the
+      # existing protected-mode Redis through loopback without changing Redis.
+      WebConfig__RedisServerUrl: ${WebConfig__RedisServerUrl:-127.0.0.1:6379}
+      # Container root filesystem is read-only; LineUpImageStorage defaults to
+      # /app/App_Data/LineUp and would crash on ctor CreateDirectory. Point it
+      # at the writable api-uploads volume instead.
+      WebConfig__LineUp__StorageRoot: /app/Uploads/LineUpImages
+      # Same for LineUp import sources (defaults to /app/App_Data/lineup-imports).
+      WebConfig__LineUp__ImportRoot: /app/Uploads/lineup-imports
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777
+    volumes:
+      - api-logs:/app/logs
+      - api-wwwroot:/app/wwwroot
+      - api-uploads:/app/Uploads
+      - api-parser-templates:/app/ParserTemplates
+      - api-generated:/app/GeneratedParsers
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:${HSJM_HTTP_PORT:?start.sh selects a free host port}/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 8
+    logging: *default-logging
+
+volumes:
+  api-logs:
+  api-wwwroot:
+  api-uploads:
+  api-parser-templates:
+  api-generated:

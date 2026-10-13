@@ -1,0 +1,78 @@
+export default {
+  'zh-cn': {
+    system_form: {
+      name: '系统名称',
+      remarks: '备注',
+      status: '状态',
+      sort: '排序',
+      statusConfirmTitle: '确认信息',
+      statusConfirm: '确认{action}「{name}」吗？',
+      statusSuccess: '{action}成功',
+      enable: '启用',
+      disable: '停用',
+    },
+    system_formRules: {
+      name: '系统名称必填',
+      remarks: '备注必填',
+      status: '状态（正常_1、停用_2）必填',
+      sort: '排序必填',
+    },
+  },
+  'zh-tw': {
+    system_form: {
+      name: '系統名稱',
+      remarks: '備註',
+      status: '狀態',
+      sort: '排序',
+      statusConfirmTitle: '確認資訊',
+      statusConfirm: '確認{action}「{name}」嗎？',
+      statusSuccess: '{action}成功',
+      enable: '啟用',
+      disable: '停用',
+    },
+    system_formRules: {
+      name: '系統名稱必填',
+      remarks: '備註必填',
+      status: '狀態（正常_1、停用_2）必填',
+      sort: '排序必填',
+    },
+  },
+  'en': {
+    system_form: {
+      name: 'Name',
+      remarks: 'Remarks',
+      status: 'Status',
+      sort: 'Sort',
+      statusConfirmTitle: 'Confirm',
+      statusConfirm: 'Are you sure you want to {action} "{name}"?',
+      statusSuccess: '{action} succeeded',
+      enable: 'Enable',
+      disable: 'Disable',
+    },
+    system_formRules: {
+      name: 'NameRequired',
+      remarks: 'RemarksRequired',
+      status: 'StatusRequired',
+      sort: 'SortRequired',
+    },
+  },
+  'ja': {
+    system_form: {
+      name: 'システム名',
+      remarks: '備考',
+      status: 'ステータス',
+      sort: '並び順',
+      statusConfirmTitle: '確認',
+      statusConfirm: '「{name}」を{action}してもよろしいですか？',
+      statusSuccess: '{action}しました',
+      enable: '有効化',
+      disable: '無効化',
+    },
+    system_formRules: {
+      name: 'システム名は必須です',
+      remarks: '備考は必須です',
+      status: 'ステータスは必須です',
+      sort: '並び順は必須です',
+    },
+  },
+}

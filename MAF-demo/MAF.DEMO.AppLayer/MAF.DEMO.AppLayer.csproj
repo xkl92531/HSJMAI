@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DocumentationFile>bin\Debug\MAF.DEMO.AppLayer.xml</DocumentationFile>
+    <OutputPath>bin\Debug\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <OutputPath>bin\Release</OutputPath>
+    <DocumentationFile>bin\Release\MAF.DEMO.AppLayer.xml</DocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Microsoft Agent Framework 官方包 -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="*-*" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="*-*" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="*-*" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="*-*" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="*-*" />
+    <PackageReference Include="OpenAI" Version="2.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\maf.demo.Core\MAF.DEMO.Core.csproj" />
+    <ProjectReference Include="..\maf.demo.IDbService\MAF.DEMO.IDbService.csproj" />
+    <ProjectReference Include="..\maf.demo.Utility\MAF.DEMO.Utility.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Basic\" />
+  </ItemGroup>
+
+</Project>

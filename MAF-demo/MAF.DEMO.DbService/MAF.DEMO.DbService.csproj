@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\maf.demo.IDbService\MAF.DEMO.IDbService.csproj" />
+    <ProjectReference Include="..\maf.demo.Utility\MAF.DEMO.Utility.csproj" />
+  </ItemGroup>
+
+</Project>

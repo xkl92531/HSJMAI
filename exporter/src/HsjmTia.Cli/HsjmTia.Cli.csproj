@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>HsjmTia.Cli</RootNamespace>
+    <AssemblyName>HsjmTia.Cli</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../HsjmTia.Core/HsjmTia.Core.csproj" />
+    <ProjectReference Include="../HsjmTia.Openness/HsjmTia.Openness.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <!-- HsjmTia.Openness 的 Siemens.Engineering 引用带 Private=False，不会随 ProjectReference
+       传递给编译期使用它公开类型（PlcSoftware 等）的下游项目，所以这里要重复声明同一份编译期引用。
+       同样 Private=False：不复制到输出目录，运行时由 OpennessAssemblyResolver 指向本机实际安装版本。 -->
+  <ItemGroup>
+    <Reference Include="Siemens.Engineering">
+      <HintPath>$(MSBuildThisFileDirectory)..\..\refs\Siemens.Engineering.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Task 10b 建了同步脚本但没有项目引用它；构建时把后端 plc-analyzer 同步进 runtime/，
+       供 AnalyzerRuntime.Resolve 找到内嵌解析器。开发机没装 git 时脚本会失败，
+       ContinueOnError 保证构建仍然成功，只是没有本地解析能力（AnalyzerRuntime.EngineScript 为 null，
+       会被记成 CapabilityMissing 缺口，不是静默丢失）。 -->
+  <Target Name="SyncAnalyzer" BeforeTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\build\sync-analyzer.ps1&quot;"
+          ContinueOnError="true" />
+  </Target>
+</Project>

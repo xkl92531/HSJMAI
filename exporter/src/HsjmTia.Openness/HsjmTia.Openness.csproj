@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>HsjmTia.Openness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../HsjmTia.Core/HsjmTia.Core.csproj" />
+  </ItemGroup>
+  <!-- 编译期绑定最低支持版本(V15.1 契约)，Private=False 不复制到输出，
+       运行时由 OpennessAssemblyResolver 指向本机实际安装的版本。 -->
+  <ItemGroup>
+    <Reference Include="Siemens.Engineering">
+      <HintPath>$(MSBuildThisFileDirectory)..\..\refs\Siemens.Engineering.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

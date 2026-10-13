@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HSJM.AI.Tests" />
+    <InternalsVisibleTo Include="HSJM.AI.IgwRegistration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HSJM.AI.IDbService\HSJM.AI.IDbService.csproj" />
+    <ProjectReference Include="..\HSJM.AI.Utility\hsjm.ai.Utility.csproj" />
+  </ItemGroup>
+
+</Project>

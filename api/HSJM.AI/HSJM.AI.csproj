@@ -1,0 +1,88 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>HSJM.AI</AssemblyName>
+    <RootNamespace>HSJM.AI</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HSJM.AI.Mcp.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DocumentationFile>bin\Debug\HSJM.AI.xml</DocumentationFile>
+    <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+    <OutputPath>bin\Debug</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <OutputPath>bin\Release</OutputPath>
+    <DocumentationFile>bin\Release\HSJM.AI.xml</DocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.20.13" />
+    <PackageReference Include="JWT" Version="10.1.1" />
+    <PackageReference Include="MediatR" Version="12.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.PlatformAbstractions" Version="1.1.0" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
+    <PackageReference Include="Npgsql" Version="10.0.1" />
+    <PackageReference Include="Scrutor" Version="4.2.2" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    
+    <!-- Hangfire 后台任务框架 -->
+    <PackageReference Include="Hangfire.Core" Version="1.8.17" />
+    <PackageReference Include="Hangfire.SqlServer" Version="1.8.17" />
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.17" />
+    
+    <!-- SignalR 实时通信（已内置，无需额外引用） -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HSJM.AI.AppLayer\HSJM.AI.AppLayer.csproj" />
+    <ProjectReference Include="..\HSJM.AI.Core\hsjm.ai.Core.csproj" />
+    <ProjectReference Include="..\HSJM.AI.DbService\hsjm.ai.DbService.csproj" />
+    <ProjectReference Include="..\HSJM.AI.MediatR\hsjm.ai.MediatR.csproj" />
+    <ProjectReference Include="..\HSJM.AI.Utility\hsjm.ai.Utility.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\test.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Remove="artifacts\**" />
+    <Content Remove="logs\Information\IOTReadTags读取超600\**" />
+    <Content Remove="logs\Information\IOTReadTags\**" />
+  </ItemGroup>
+
+  <!-- 提示词模板文件 - 发布时自动拷贝 -->
+  <ItemGroup>
+    <None Include="..\docs\prompts\**\*.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>prompts\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Remove="artifacts\**" />
+    <None Remove="logs\Information\IOTReadTags读取超600\**" />
+    <None Remove="logs\Information\IOTReadTags\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="artifacts\**" />
+    <Compile Remove="logs\Information\IOTReadTags读取超600\**" />
+    <Compile Remove="logs\Information\IOTReadTags\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Remove="artifacts\**" />
+    <EmbeddedResource Remove="logs\Information\IOTReadTags读取超600\**" />
+    <EmbeddedResource Remove="logs\Information\IOTReadTags\**" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 真实数据夹具（tools/igw_bulk_e2e/make_fixtures.py 生成） -->
+    <None Include="Fixtures\*.json.gz" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HSJM.AI.AppLayer\HSJM.AI.AppLayer.csproj" />
+    <!-- task-8：读链服务（PLC_VariableAccessService）别名路由测试 -->
+    <ProjectReference Include="..\HSJM.AI.DbService\hsjm.ai.DbService.csproj" />
+  </ItemGroup>
+
+</Project>

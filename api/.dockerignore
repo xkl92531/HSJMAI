@@ -1,0 +1,7 @@
+*/bin
+*/obj/Debug
+*/obj/Release
+tmp
+.vs
+*.tmp
+*.bak

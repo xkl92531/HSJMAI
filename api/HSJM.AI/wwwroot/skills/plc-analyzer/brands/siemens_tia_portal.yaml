@@ -1,0 +1,457 @@
+# Siemens TIA Portal 解析配置
+# 适用版本: V16, V17, V18
+# 支持格式: XML导出文件 (.xml, .ml)
+# 支持块类型: FB, FC, DB (Global/Instance), OB
+# 支持编程语言: LAD, FBD, SCL, STL, GRAPH
+
+metadata:
+  brand: "Siemens"
+  product: "TIA Portal"
+  versions: ["V16", "V17", "V18"]
+  author: "HSJM-AI"
+  last_updated: "2026-02-04"
+  description: |
+    西门子TIA Portal导出的XML格式PLC程序文件解析配置。
+    支持功能块(FB)、函数(FC)、数据块(DB)、组织块(OB)。
+    支持梯形图(LAD)、功能块图(FBD)、结构化文本(SCL)、语句表(STL)、顺序功能图(GRAPH)。
+
+# ============================================================
+# 文件格式检测
+# ============================================================
+detection:
+  file_extensions: [".xml", ".ml"]
+  content_signatures:
+    - pattern: "<Document>"
+      position: start
+    - pattern: "<Engineering version="
+      position: start
+    - pattern: "<SW.Blocks"
+      position: any
+    - pattern: "<SW.Types.PlcStruct"
+      position: any
+    - pattern: "siemens.com/automation/Openness"
+      position: any
+  encoding_hints: ["utf-8", "utf-16"]
+  detection_score_threshold: 0.6
+
+# ============================================================
+# 预处理配置
+# ============================================================
+preprocessing:
+  namespace_handling: strip
+  # 原始命名空间参考（处理时会被移除）
+  namespace_map:
+    sw_v4: "http://www.siemens.com/automation/Openness/SW/Interface/v4"
+    sw_v5: "http://www.siemens.com/automation/Openness/SW/Interface/v5"
+    flgnet: "http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v4"
+  chunk_strategy: xml_element
+  chunk_element: "SW.Blocks.*"
+  chunk_size: 5000
+
+# ============================================================
+# 数据提取规则
+# ============================================================
+extraction:
+
+  # ----------------------------------------------------------
+  # 程序块提取
+  # ----------------------------------------------------------
+  blocks:
+    selector: >
+      //SW.Blocks.FB | //SW.Blocks.FC | //SW.Blocks.DB | 
+      //SW.Blocks.OB | //SW.Blocks.GlobalDB | //SW.Blocks.InstanceDB |
+      //SW.Types.PlcStruct
+    type_detection: element_name
+    type_map:
+      "SW.Blocks.FB": "FB"
+      "SW.Blocks.FC": "FC"
+      "SW.Blocks.DB": "DB"
+      "SW.Blocks.GlobalDB": "GlobalDB"
+      "SW.Blocks.InstanceDB": "InstanceDB"
+      "SW.Blocks.OB": "OB"
+      "SW.Types.PlcStruct": "UDT"
+    fields:
+      name:
+        xpath: "./AttributeList/Name"
+        transform: "text()"
+      number:
+        xpath: "./AttributeList/Number"
+        transform: "int()"
+      programming_language:
+        xpath: "./AttributeList/ProgrammingLanguage"
+        transform: "text()"
+        default: "Unknown"
+      memory_layout:
+        xpath: "./AttributeList/MemoryLayout"
+        transform: "text()"
+        default: "Optimized"
+      author:
+        xpath: "./AttributeList/HeaderAuthor"
+        transform: "text()"
+        default: ""
+      version:
+        xpath: "./AttributeList/HeaderVersion"
+        transform: "text()"
+        default: ""
+      comment:
+        xpath: ".//MultilingualText[@CompositionName='Comment']//MultilingualTextItem/AttributeList/Text"
+        fallback: "./ObjectList/MultilingualText[@CompositionName='Comment']//Text"
+        transform: "text()"
+      # 网络数量统计
+      networks_count:
+        xpath: "count(.//SW.Blocks.CompileUnit)"
+        transform: "int()"
+        default: 0
+
+  # ----------------------------------------------------------
+  # 变量/接口提取
+  # ----------------------------------------------------------
+  variables:
+    # 接口定义位置
+    selector: ".//Interface//Section/Member"
+    scope_detection:
+      method: parent_element
+      parent_xpath: "ancestor::Section/@Name"
+      mapping:
+        "Input": "IN"
+        "Output": "OUT"
+        "InOut": "INOUT"
+        "Static": "STAT"
+        "Temp": "TEMP"
+        "Constant": "CONST"
+        "Base": "BASE"
+        "None": "INTERNAL"
+    nested:
+      enabled: true
+      recurse_selector: "./Sections/Section/Member | ./Member"
+      path_separator: "."
+      max_depth: 10
+    fields:
+      name:
+        attribute: "Name"
+      datatype:
+        attribute: "Datatype"
+      remanence:
+        attribute: "Remanence"
+        default: "NonRetain"
+      accessibility:
+        attribute: "Accessibility"
+        default: "Public"
+      initial_value:
+        xpath: "./StartValue"
+        transform: "text()"
+        default: ""
+      comment:
+        xpath: "./Comment//MultiLanguageText[@Lang='zh-CN']"
+        fallback: "./Comment//MultiLanguageText[1]"
+        transform: "text()"
+        default: ""
+      # 布尔属性
+      external_accessible:
+        xpath: ".//BooleanAttribute[@Name='ExternalAccessible']"
+        transform: "bool()"
+        default: true
+      external_visible:
+        xpath: ".//BooleanAttribute[@Name='ExternalVisible']"
+        transform: "bool()"
+        default: true
+
+  # ----------------------------------------------------------
+  # 调用关系提取
+  # ----------------------------------------------------------
+  calls:
+    selector: ".//Call/CallInfo | .//Access[@Scope='Call']/CallInfo"
+    fields:
+      callee_name:
+        attribute: "Name"
+      callee_type:
+        xpath: "./Instance/Component/@Name"
+        fallback: "@Name"
+      block_type:
+        attribute: "BlockType"
+        default: ""
+      # 定位到哪个网络
+      network_id:
+        xpath: "ancestor::SW.Blocks.CompileUnit/@ID"
+        transform: "text()"
+
+  # ----------------------------------------------------------
+  # 网络逻辑提取 (LAD/FBD)
+  # ----------------------------------------------------------
+  networks:
+    selector: ".//SW.Blocks.CompileUnit"
+    fields:
+      id:
+        attribute: "ID"
+      title:
+        xpath: ".//MultilingualText[@CompositionName='Title']//Text"
+        transform: "text()"
+        default: ""
+      comment:
+        xpath: ".//MultilingualText[@CompositionName='Comment']//Text"
+        transform: "text()"
+        default: ""
+      language:
+        xpath: "./AttributeList/ProgrammingLanguage"
+        transform: "text()"
+    # 网络内部元素（可选深度解析）
+    parts:
+      selector: ".//FlgNet/Parts/*"
+      extract_contacts: true      # 提取触点 (Contact)
+      extract_coils: true         # 提取线圈 (Coil)
+      extract_operations: true    # 提取运算 (Add, Mul, etc.)
+    wires:
+      selector: ".//FlgNet/Wires/Wire"
+      description: "连线关系（可用于重建逻辑）"
+
+  # ----------------------------------------------------------
+  # GRAPH顺控提取
+  # ----------------------------------------------------------
+  graphs:
+    # GRAPH程序特有结构
+    enabled_for_languages: ["GRAPH"]
+    
+    sequence_selector: ".//Sequence"
+    
+    steps:
+      selector: ".//Steps/Step | .//Step"
+      fields:
+        number:
+          attribute: "Number"
+          transform: "int()"
+        name:
+          attribute: "Name"
+        is_init:
+          attribute: "InitStep"
+          transform: "bool()"
+          default: false
+        comment:
+          xpath: ".//Comment//Text"
+          transform: "text()"
+        # 步内动作
+        actions:
+          xpath: ".//Action"
+          multi: true
+          fields:
+            qualifier:
+              attribute: "Qualifier"
+            name:
+              xpath: ".//Text"
+              transform: "text()"
+        # 监控时间
+        max_time:
+          xpath: ".//MaximumTime"
+          transform: "text()"
+        warning_time:
+          xpath: ".//WarningTime"
+          transform: "text()"
+    
+    transitions:
+      selector: ".//Transitions/Transition | .//Transition"
+      fields:
+        name:
+          attribute: "Name"
+        comment:
+          xpath: ".//Comment//Text"
+          transform: "text()"
+        # 转换条件（可能是LAD网络或表达式）
+        condition_type:
+          xpath: "./AttributeList/ProgrammingLanguage"
+          transform: "text()"
+          default: "LAD"
+    
+    connections:
+      selector: ".//Connections/Connection"
+      fields:
+        from_step:
+          xpath: "./SourceStep/@Number"
+          transform: "int()"
+        from_transition:
+          attribute: "SourceTransition"
+        to_step:
+          xpath: "./DestStep/@Number"
+          transform: "int()"
+        to_transition:
+          attribute: "DestTransition"
+
+  # ----------------------------------------------------------
+  # SCL/STL 代码提取
+  # ----------------------------------------------------------
+  structured_text:
+    enabled_for_languages: ["SCL", "STL"]
+    selector: ".//StructuredText | .//StatementList"
+    fields:
+      code:
+        xpath: "."
+        transform: "inner_text()"
+        description: "提取纯文本代码内容"
+    # Token提取（用于语义分析）
+    tokens:
+      selector: ".//Token | .//Access"
+      fields:
+        type:
+          attribute: "Text"
+          fallback: "local-name()"
+        value:
+          xpath: "."
+          transform: "text()"
+    # 关键表达式提取
+    key_expressions:
+      patterns:
+        - "IF.*THEN"           # 条件分支
+        - "CASE.*OF"           # 多路选择
+        - "FOR.*TO.*DO"        # 循环
+        - "WHILE.*DO"          # 循环
+        - ":="                 # 赋值
+      max_count: 20
+
+# ============================================================
+# 语义分析配置
+# ============================================================
+semantic:
+  prompts:
+    # 块功能摘要
+    block_summary: |
+      分析以下西门子PLC程序块的功能:
+      
+      【基本信息】
+      - 块名称: {name}
+      - 块类型: {type} (FB=功能块, FC=函数, DB=数据块, OB=组织块)
+      - 块编号: {number}
+      - 编程语言: {language}
+      
+      【接口变量摘要】
+      {variables_summary}
+      
+      【调用关系】
+      {calls_summary}
+      
+      请用中文简要描述:
+      1. 这个块的主要功能（50字以内）
+      2. 典型应用场景
+      3. 关键输入输出变量的作用
+
+    # 变量用途分析
+    variable_analysis: |
+      分析以下PLC变量的用途:
+      
+      变量路径: {path}
+      数据类型: {datatype}
+      作用域: {scope}
+      注释: {comment}
+      初始值: {initial_value}
+      
+      所属块: {block_name} ({block_type})
+      
+      请推断这个变量的:
+      1. 实际用途
+      2. 可能关联的设备或信号
+      3. 命名约定解读
+
+    # GRAPH步序分析
+    graph_analysis: |
+      分析以下GRAPH顺序功能图:
+      
+      【块信息】
+      块名: {name}
+      
+      【步序列表】
+      {steps_summary}
+      
+      【转换条件】
+      {transitions_summary}
+      
+      请描述:
+      1. 这个顺控程序的整体流程
+      2. 各步骤的功能
+      3. 关键转换条件的含义
+
+    # 故障诊断辅助
+    fault_analysis: |
+      根据以下PLC程序结构，分析可能的故障点:
+      
+      【程序块】{block_name}
+      【相关变量】
+      {relevant_variables}
+      
+      【故障现象描述】
+      {fault_description}
+      
+      请分析:
+      1. 可能涉及的程序段
+      2. 需要检查的变量
+      3. 建议的排查步骤
+
+  # Token预算分配
+  token_budget:
+    block_info: 200
+    variables: 1500
+    calls: 500
+    expressions: 800
+    graph_steps: 500
+    total: 4000
+
+  # 变量裁剪优先级（数字越小优先级越高）
+  variable_priority:
+    - { scope: "IN", priority: 1 }
+    - { scope: "OUT", priority: 2 }
+    - { scope: "INOUT", priority: 3 }
+    - { scope: "STAT", priority: 4 }
+    - { scope: "TEMP", priority: 5 }
+    - { scope: "CONST", priority: 6 }
+
+  # 变量命名约定解读（用于辅助语义分析）
+  naming_conventions:
+    prefixes:
+      "i_": "输入信号 (Input)"
+      "o_": "输出信号 (Output)"
+      "q_": "输出信号 (Output, 德语风格)"
+      "b_": "布尔变量 (Bool)"
+      "n_": "整数变量 (Int)"
+      "r_": "实数变量 (Real)"
+      "s_": "字符串变量 (String)"
+      "t_": "时间变量 (Time)"
+      "TON_": "接通延时定时器"
+      "TOF_": "关断延时定时器"
+      "CTU_": "加计数器"
+      "CTD_": "减计数器"
+    suffixes:
+      "_FB": "功能块实例"
+      "_DB": "数据块引用"
+      "_HMI": "HMI相关变量"
+      "_Cmd": "命令/控制信号"
+      "_Fbk": "反馈信号"
+      "_Sts": "状态信号"
+      "_Alm": "报警信号"
+      "_Set": "设定值"
+      "_Act": "实际值"
+    patterns:
+      "^M[0-9]+": "内部标志位"
+      "^DB[0-9]+": "数据块引用"
+      "^FC[0-9]+": "函数调用"
+      "^FB[0-9]+": "功能块调用"
+      "Step[0-9]+": "GRAPH步号"
+      "Trans[0-9]+": "GRAPH转换"
+
+# ============================================================
+# 特殊处理规则
+# ============================================================
+special_rules:
+  # 实例DB的特殊处理
+  instance_db:
+    detect_pattern: "SW.Blocks.InstanceDB"
+    extract_fb_reference: true
+    fb_reference_xpath: "./AttributeList/InstanceOfName"
+  
+  # UDT引用处理
+  udt_reference:
+    detect_pattern: 'Datatype="&quot;[^&]+&quot;"'
+    extract_udt_name: true
+    udt_name_regex: '&quot;([^&]+)&quot;'
+  
+  # 多语言注释优先级
+  comment_languages:
+    - "zh-CN"
+    - "en-US"
+    - "de-DE"
+    - ""  # 默认/无语言标记

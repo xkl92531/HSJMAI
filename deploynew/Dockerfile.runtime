@@ -1,0 +1,31 @@
+# 程序包镜像构建文件（在服务器上由 server-start.sh 自动执行，无需手工跑）。
+# 原理：以服务器上已有的原始 hsjm-ai-api:<版本> 镜像为基底（自带 .NET 10 运行时、
+# Python venv、字体、Playwright、entrypoint），把新程序包叠加为一层 —— 秒级、离线。
+# BASE 由 server-start.sh 自动探测（跳过带 hsjm.layered 标记的叠加镜像）并传入。
+# 注意：所有 rm/cp 都发生在【新镜像的中间层】里，基底镜像与运行中的容器不受任何影响。
+ARG BASE=hsjm-ai-api:placeholder
+FROM ${BASE}
+
+# 标记：本镜像由程序包叠加而来。server-start.sh 选基底时会跳过带此标记的镜像，
+# 保证每次升级都叠在同一个"原始基底"（完整离线包构建）上，镜像不会链式越叠越厚。
+LABEL hsjm.layered="true"
+
+USER root
+COPY app/ /stage/app/
+COPY webdist/ /stage/webdist/
+
+# 全程用 cp -a（mv 的源路径不能以 /. 结尾，会报 Device or resource busy）
+RUN rm -rf /opt/hsjm/wwwroot.seed /opt/hsjm/web.seed \
+ && rm -rf /app \
+ && mkdir -p /app /opt/hsjm/wwwroot.seed /opt/hsjm/web.seed \
+ && cp -a /stage/app/. /app/ \
+ && cp -a /app/wwwroot/. /opt/hsjm/wwwroot.seed/ \
+ && cp -a /stage/webdist/. /opt/hsjm/web.seed/ \
+ && rm -rf /app/wwwroot /stage \
+ && install -d -o app -g app /app/wwwroot /app/logs /app/Uploads /app/ParserTemplates /app/GeneratedParsers \
+ && chown -R app:app /app /opt/hsjm
+
+# 继承基底镜像的 ENTRYPOINT(hsjm-entrypoint)/EXPOSE/HEALTHCHECK：
+#   - wwwroot.seed  -> /app/wwwroot 卷，no-clobber 合并（现场改过的 Skill 文件保留）
+#   - web.seed      -> /app/wwwroot 卷，每次启动刷新（前端随包更新）
+USER app
