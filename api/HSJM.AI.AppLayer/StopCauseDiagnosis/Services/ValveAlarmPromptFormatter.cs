@@ -32,10 +32,12 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             if (stations.Count == 0) return;
 
             sb.AppendLine("## 阀门报警（PLC 实时值）");
-            sb.AppendLine("以下是当前为 true 的报警位，由 PLC 程序自身置出，可作为根因证据：阀门 FB 报警输出（伸出/缩回未到位、伸出/缩回条件不满足、动作超时未到位、到位信号矛盾）、传感器期望状态报警（监视输入长时间不在期望状态），以及全局 DB 里由程序置位、复位保持、供 HMI 显示的报警位（文字为 HMI 报警文本，没有文本时为变量路径）。");
+            sb.AppendLine("以下是当前为 true 的报警位，由 PLC 程序自身置出：阀门 FB 报警输出（伸出/缩回未到位、伸出/缩回条件不满足、动作超时未到位、到位信号矛盾）、传感器期望状态报警（监视输入长时间不在期望状态），以及全局 DB 里由程序置位、复位保持、供 HMI 显示的报警位（文字为 HMI 报警文本，没有文本时为变量路径）。");
+            sb.AppendLine("证据分量不同：伸出/缩回未到位、动作超时未到位、到位信号矛盾是执行机构本体的故障报警，可作为根因证据；伸出/缩回条件不满足警告只说明该阀的联锁/前置条件没满足，通常是被其它工位或流程阻塞后的结果，不能单独据此把该工位判为根因。");
+            sb.AppendLine("若某工位在等待其它异常工位（见等待关系），它的报警优先视为连带结果，除非是本工位输出为 true 而反馈为 false 的未到位/超时报警。");
             sb.AppendLine("报警位可能需要复位才会清除：请结合每条报警后列出的输出与反馈当前值判断故障是否仍在发生（例如输出为 true 而反馈为 false，说明气缸疑似没有到位）。");
             sb.AppendLine("读取失败的报警位不在本列表中，不是已确认故障，不能作为故障点输出。");
-            sb.AppendLine("工位即使在下方被列为正常/运行中，其阀门报警仍是有效证据，需要结合判断。");
+            sb.AppendLine("工位即使在下方被列为正常/运行中，其执行机构故障报警仍是有效证据，需要结合判断。");
             foreach (var station in stations)
             {
                 sb.AppendLine($"### {station.StationCode}");
@@ -48,7 +50,12 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     signals.AddRange(alarm.Feedbacks.Select(f => feedbackLabel + Format(f)));
                     var tail = signals.Count > 0 ? "；" + string.Join("，", signals) : string.Empty;
                     var text = string.IsNullOrWhiteSpace(alarm.Text) ? alarm.AlarmVariable : alarm.Text;
-                    var hint = alarm.Kind == "Timeout" ? TimeoutHint(alarm) : string.Empty;
+                    var hint = alarm.Kind switch
+                    {
+                        "Timeout" => TimeoutHint(alarm),
+                        "FwdLock" or "BkdLock" => " → 动作条件未满足，多为被阻塞的结果",
+                        _ => string.Empty,
+                    };
                     // 锁存报警位没有实例：位置只写块名
                     var where = string.Join("，", new[] { alarm.ValveInstance, alarm.BlockName }.Where(x => !string.IsNullOrWhiteSpace(x)));
                     sb.AppendLine($"- [{KindLabel(alarm.Kind)}] {text}{(where.Length > 0 ? $"（{where}）" : string.Empty)}{tail}{hint}");

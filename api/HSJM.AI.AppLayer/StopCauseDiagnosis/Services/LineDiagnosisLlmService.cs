@@ -253,9 +253,19 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     waitingRelations.Add($"  {station.StationCode} 等待 → {target}");
                 }
             }
+            // 再补上按卡住信号名推断出的等待（如 OP010 的转移条件卡在 OP030_xxx 上）
+            foreach (var profile in evidenceProfiles ?? Array.Empty<StationRootCauseEvidenceProfile>())
+            {
+                foreach (var target in profile.WaitingOn)
+                {
+                    var relation = $"  {profile.StationCode} 等待 → {target}";
+                    if (!waitingRelations.Contains(relation, StringComparer.OrdinalIgnoreCase))
+                        waitingRelations.Add(relation);
+                }
+            }
             if (waitingRelations.Count > 0)
             {
-                sb.AppendLine("- 工位间等待关系（代码层面已确认）:");
+                sb.AppendLine("- 工位间等待关系（显式归属 + 卡住信号所属工位）:");
                 foreach (var rel in waitingRelations)
                     sb.AppendLine(rel);
             }
@@ -386,7 +396,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             sb.AppendLine("   判断真实故障要看证据强度，而不是机械套用类型优先级。通常更可信的证据包括：");
             sb.AppendLine("   - **直接执行机构证据**（气缸/阀/电机输出与到位反馈矛盾、GRAPH 转换卡在物理反馈叶子节点）：通常比流程完成信号更接近根因。");
             sb.AppendLine("   - **明确报警/通信中断证据**（真实 Alarm/Fault/Error/CommLost，而不是普通 OK/完成信号为 False）：可作为独立根因候选。");
-            sb.AppendLine("   - **IO 约束违反证据**（互斥/蕴含/全满足等约束已被实时值触发）：通常应视为真实故障候选，尤其是输出已触发但物理输入反馈未满足。若报告里包含 I 点地址（如 %Ixx.x），根因描述、工位摘要和建议动作中必须带出信号名与地址。");
+            sb.AppendLine("   - **IO 约束违反证据**（互斥/蕴含/全满足等约束已被实时值触发）：说明该工位确有异常，尤其是输出已触发但物理输入反馈未满足；但若该工位在等待其它异常工位，约束违反更可能是被阻塞的结果，不能据此把它判为根因。若报告里包含 I 点地址（如 %Ixx.x），根因描述、工位摘要和建议动作中必须带出信号名与地址。");
             sb.AppendLine("   - **流程状态/握手证据**（完成、允许、就绪、同步、握手等状态信号）：先视为停机结果或等待条件；只有当它能追到明确 L1/L2 近端来源，或伴随明确报警、通信中断、物理反馈矛盾时，才提升为强根因候选。");
             sb.AppendLine("   - 普通 DB 变量（大量 False）通常只是联动结果，不是根因。");
             sb.AppendLine("4. 根因判定：综合结构化证据画像、失败路径、等待关系和信号语义。不要因为某工位排在前面、发现数量更多、或机器人完成信号为 False 就直接判根因。");
@@ -406,7 +416,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             if (!string.IsNullOrWhiteSpace(constraintReport))
             {
                 sb.AppendLine("## IO 约束证据报告（内部参考）");
-                sb.AppendLine("以下是本次停机诊断中来自能量流/IO诊断服务的分析报告，请将这部分作为根因分析的重要参考依据：");
+                sb.AppendLine("以下是本次停机诊断中来自能量流/IO诊断服务的分析报告。请先按工位间等待关系确定阻塞源头工位，再用这部分解释源头工位的具体故障点；等待其它工位的工位上的约束违反，按连带结果处理：");
                 sb.AppendLine("若报告中的约束问题包含 I点地址，请在最终 JSON 的 rootCauseDescription、stationAnalysis.summary、suggestedActions 中明确输出对应信号名和地址，便于现场按点位排查。");
                 sb.AppendLine("注意：最终面向用户的 rootCauseDescription、impactChain、stationAnalysis、secondaryCauses、suggestedActions 中不要使用“IO约束诊断确认”“约束诊断服务确认”“IO约束故障”等内部来源表述。若该证据支持故障结论，请写成“AI诊断确认存在故障”，并继续描述具体信号、I点地址和物理故障现象。");
                 sb.AppendLine("注意：报告中标注“无法判定”“采集失败”“未采到”的条目，是该信号没有采集到实时值（通讯故障、点名不存在等），不是已确认的 IO 故障，不能作为故障点输出，也不能替换成 true/false 之类的猜测值。");
@@ -501,6 +511,9 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             sb.AppendLine("```");
         }
 
+        private const int ConstraintEvidenceScorePerLine = 30;
+        private const int ConstraintEvidenceScoreMax = 60;
+
         internal sealed class StationRootCauseEvidenceProfile
         {
             public string StationCode { get; set; }
@@ -516,7 +529,12 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             public int ExternalInputCount { get; set; }
             public int InternalFaultCount { get; set; }
             public int ConstraintPhysicalIoFaultCount { get; set; }
+            /// <summary>Score 里来自 IO 约束证据的部分（仲裁时扣掉，只看运行时证据）</summary>
+            public int ConstraintScore { get; set; }
             public List<string> Reasons { get; set; } = new List<string>();
+
+            /// <summary>本工位在等待的其它异常工位（显式 WaitingFor 与按卡住信号名推断的合并）</summary>
+            public List<string> WaitingOn { get; set; } = new List<string>();
 
             public bool HasStrongPhysicalEvidence =>
                 HasConstraintPhysicalIoFault
@@ -526,7 +544,9 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             public bool HasConstraintPhysicalIoFault => ConstraintPhysicalIoFaultCount > 0;
 
             public int RuntimeEvidenceScore =>
-                Math.Max(-50, Math.Min(120, Score - ConstraintPhysicalIoFaultCount * 120));
+                Math.Max(-50, Math.Min(120, Score - ConstraintScore));
+
+            public bool IsWaitingOnOtherStation => WaitingOn.Count > 0;
 
             public bool HasRuntimeStrongPhysicalEvidence =>
                 DirectActuatorFeedbackCount > 0
@@ -549,19 +569,21 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             List<StationDiagnosisSummaryDto> summaries,
             string constraintReport = null)
         {
+            var abnormalStations = BuildAbnormalStationIndex(summaries);
             var profiles = summaries == null || summaries.Count == 0
                 ? new List<StationRootCauseEvidenceProfile>()
                 : summaries
                     .Where(s => s.OverallStatus == "SomeFalse" && s.KeyFindings?.Count > 0)
-                    .Select(BuildEvidenceProfile)
+                    .Select(s => BuildEvidenceProfile(s, abnormalStations))
                     .ToList();
 
             MergeConstraintEvidenceProfiles(
                 profiles,
                 BuildConstraintEvidenceProfiles(constraintReport, summaries));
 
+            // 等着别的异常工位的排后面：它们多半是被连带停下的，约束违反也不改变这一点
             return profiles
-                .OrderByDescending(p => p.HasConstraintPhysicalIoFault)
+                .OrderBy(p => p.IsWaitingOnOtherStation)
                 .ThenByDescending(p => p.Score)
                 .ThenByDescending(p => p.DirectActuatorFeedbackCount)
                 .ThenByDescending(p => p.GraphTransitionBlockCount)
@@ -624,16 +646,19 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
 
                     profile.ConstraintPhysicalIoFaultCount++;
                     profile.InternalFaultCount++;
-                    profile.Score += 120;
+                    profile.Score += ConstraintEvidenceScorePerLine;
                     profile.EvidenceLevel = "ConstraintPhysicalIoFault";
                     if (profile.Reasons.Count < 6)
-                        profile.Reasons.Add($"IO物理约束强证据: {evidenceText}");
+                        profile.Reasons.Add($"IO物理约束证据: {evidenceText}");
                 }
             }
 
+            // 约束违反说明该工位确有异常，但不说明它是停机源头（被阻塞的工位也会违反约束），
+            // 所以只给与一条近端追踪相当的分量，不再压过其它工位的运行时证据
             foreach (var profile in profiles.Values)
             {
-                profile.Score = Math.Max(90, Math.Min(180, profile.Score));
+                profile.Score = Math.Min(ConstraintEvidenceScoreMax, profile.Score);
+                profile.ConstraintScore = profile.Score;
                 profile.EvidenceLevel = "ConstraintPhysicalIoFault";
             }
 
@@ -657,7 +682,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     continue;
                 }
 
-                existing.Score = Math.Max(existing.Score + constraint.Score, constraint.Score);
+                existing.Score += constraint.Score;
+                existing.ConstraintScore += constraint.ConstraintScore;
                 existing.ConstraintPhysicalIoFaultCount += constraint.ConstraintPhysicalIoFaultCount;
                 existing.InternalFaultCount += constraint.InternalFaultCount;
                 existing.EvidenceLevel = "ConstraintPhysicalIoFault";
@@ -753,7 +779,72 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             return text.Substring(0, maxLength) + "...";
         }
 
-        private static StationRootCauseEvidenceProfile BuildEvidenceProfile(StationDiagnosisSummaryDto station)
+        /// <summary>
+        /// 异常工位按编号索引：OP30 / OP030 / OP0030 都对到同一个工位。
+        /// 只收 SomeFalse 的工位——等一个正常运转的工位不构成阻塞。
+        /// </summary>
+        private static Dictionary<int, string> BuildAbnormalStationIndex(List<StationDiagnosisSummaryDto> summaries)
+        {
+            var index = new Dictionary<int, string>();
+            foreach (var s in summaries ?? new List<StationDiagnosisSummaryDto>())
+            {
+                if (s?.OverallStatus != "SomeFalse" || string.IsNullOrWhiteSpace(s.StationCode))
+                    continue;
+                var number = ParseStationNumber(s.StationCode.Trim());
+                if (number.HasValue && !index.ContainsKey(number.Value))
+                    index[number.Value] = s.StationCode.Trim();
+            }
+            return index;
+        }
+
+        private static int? ParseStationNumber(string stationCode)
+        {
+            var m = Regex.Match(stationCode ?? string.Empty, @"^OP(\d{2,4})$", RegexOptions.IgnoreCase);
+            return m.Success ? int.Parse(m.Groups[1].Value) : null;
+        }
+
+        /// <summary>
+        /// 这条发现是在等哪个其它工位：显式 WaitingFor:OPxxx，或卡住的信号名里写着别的工位编号
+        /// （如 OP010 的转移条件卡在 OP030-V90-OverTurn-Z1 / DB345_OP30Cylinder.xxx 上）。
+        /// 只认异常工位；不是在等别人时返回 null。
+        /// </summary>
+        private static string ResolveWaitTarget(
+            StationAnchorFinding finding,
+            string ownStation,
+            IReadOnlyDictionary<int, string> abnormalStations)
+        {
+            var ownNumber = ParseStationNumber(ownStation);
+            string Lookup(string code)
+            {
+                var number = ParseStationNumber(code);
+                return number.HasValue && number != ownNumber && abnormalStations.TryGetValue(number.Value, out var target)
+                    ? target
+                    : null;
+            }
+
+            if (!string.IsNullOrEmpty(finding.FaultOwnership)
+                && finding.FaultOwnership.StartsWith("WaitingFor:", StringComparison.OrdinalIgnoreCase))
+            {
+                return Lookup(finding.FaultOwnership.Substring("WaitingFor:".Length).Trim());
+            }
+
+            if (!IsFalseFinding(finding))
+                return null;
+
+            // 只看信号本身的名字；失败路径里会顺带出现很多无关变量
+            var names = $"{finding.VariableName} {finding.DisplayName}";
+            foreach (Match m in Regex.Matches(names, @"(?<![A-Za-z0-9])OP\d{2,4}(?!\d)", RegexOptions.IgnoreCase))
+            {
+                var target = Lookup(m.Value);
+                if (target != null)
+                    return target;
+            }
+            return null;
+        }
+
+        private static StationRootCauseEvidenceProfile BuildEvidenceProfile(
+            StationDiagnosisSummaryDto station,
+            IReadOnlyDictionary<int, string> abnormalStations)
         {
             var profile = new StationRootCauseEvidenceProfile
             {
@@ -767,6 +858,17 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     continue;
                 if (finding.DiagnosisPhase == "GraphTransitionTrace" && finding.EvaluatedValue == true)
                     continue;
+
+                // 卡在别的工位信号上：只记等待关系，不把对方的气缸/反馈算成本工位的证据
+                var waitTarget = ResolveWaitTarget(finding, station.StationCode, abnormalStations);
+                if (waitTarget != null)
+                {
+                    profile.WaitingCount++;
+                    profile.Score -= 10;
+                    if (!profile.WaitingOn.Contains(waitTarget, StringComparer.OrdinalIgnoreCase))
+                        profile.WaitingOn.Add(waitTarget);
+                    continue;
+                }
 
                 var score = ScoreFindingForRootCause(finding, profile);
                 profile.Score += score;
@@ -901,11 +1003,16 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 return;
 
             sb.AppendLine("## 结构化根因证据画像");
-            sb.AppendLine("下面评分优先使用跨项目通用的结构证据：GRAPH 转换是否卡在当前条件、失败链是否追到明确 L1/L2 近端来源、是否有物理 I/O 或明确报警/故障。若 ConstraintIoFault > 0，表示 IO 约束报告中存在明确物理信号/地址故障证据，LLM 应优先把它作为根因候选并在最终结论中解释；其它词义分类只作为辅助。若选择低分工位作为根因，需要说明它有什么更强的近端追踪、明确报警、通信中断或物理反馈证据，而不是仅凭完成/允许/OK 类状态为 False。");
+            sb.AppendLine("下面评分优先使用跨项目通用的结构证据：GRAPH 转换是否卡在当前条件、失败链是否追到明确 L1/L2 近端来源、是否有物理 I/O 或明确报警/故障。其它词义分类只作为辅助。若选择低分工位作为根因，需要说明它有什么更强的近端追踪、明确报警、通信中断或物理反馈证据，而不是仅凭完成/允许/OK 类状态为 False。");
+            sb.AppendLine("**等待关系优先于分数**：WaitingOn 非空表示该工位当前卡在其它异常工位的信号上（在等对方），它身上的气缸未到位、报警、约束违反通常是被停下后的连带结果，应判为受影响工位。请沿 WaitingOn 链找到不再等待其它异常工位的工位，把它作为根因候选；只有互相等待时才按证据强弱判断。");
+            sb.AppendLine("ConstraintIoFault > 0 表示该工位有 IO 约束违反，说明该工位确有异常并给出了具体信号/地址，但不等于它就是停机源头；它在等待其它工位时，约束违反可能只是被阻塞的结果。");
             foreach (var profile in evidenceProfiles.Take(8))
             {
+                var waitingOn = profile.IsWaitingOnOtherStation
+                    ? $", WaitingOn={string.Join(",", profile.WaitingOn)}"
+                    : string.Empty;
                 sb.AppendLine(
-                    $"- {profile.StationCode}: Score={profile.Score}, Level={profile.EvidenceLevel}, " +
+                    $"- {profile.StationCode}: Score={profile.Score}{waitingOn}, Level={profile.EvidenceLevel}, " +
                     $"ConstraintIoFault={profile.ConstraintPhysicalIoFaultCount}, " +
                     $"DirectActuator={profile.DirectActuatorFeedbackCount}, GraphBlock={profile.GraphTransitionBlockCount}, " +
                     $"NearTrace={profile.ClearNearTraceCount}, " +
@@ -930,8 +1037,14 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             report.SecondaryCauses ??= new List<SecondaryCauseItem>();
             report.SuggestedActions ??= new List<string>();
 
+            if (ApplyWaitingArbitration(report, evidenceProfiles, isEnglishOutput))
+                return;
+
+            // 以下为 06-15 版证据复核，原样保留；只多一条：在等其它异常工位的不参与按分数改判——
+            // 它们身上的气缸未到位、约束违反多半是被停下的结果，分数再高也不能把源头工位改掉
             var arbitrationProfiles = evidenceProfiles
                 .Where(p => p.HasRuntimeStrongPhysicalEvidence || p.HasExplicitFaultEvidence)
+                .Where(p => !IsBlockedByOtherStation(p, evidenceProfiles))
                 .ToList();
 
             var top = arbitrationProfiles
@@ -1020,6 +1133,141 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 report.SuggestedActions.Insert(0, action);
         }
 
+        /// <summary>
+        /// 沿等待关系找阻塞源头：从该工位出发，走到不再等任何异常工位的工位为止。
+        /// 走到多个源头时取运行时证据最强的；只有互相等待（环）、找不到源头时返回 null，不下结论。
+        /// </summary>
+        internal static StationRootCauseEvidenceProfile ResolveBlockingRoot(
+            StationRootCauseEvidenceProfile start,
+            IReadOnlyList<StationRootCauseEvidenceProfile> profiles)
+        {
+            if (start == null)
+                return null;
+            if (!start.IsWaitingOnOtherStation)
+                return start;
+
+            var byCode = profiles
+                .GroupBy(p => p.StationCode, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { start.StationCode };
+            var queue = new Queue<StationRootCauseEvidenceProfile>();
+            queue.Enqueue(start);
+            var roots = new List<StationRootCauseEvidenceProfile>();
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                var next = current.WaitingOn
+                    .Where(code => byCode.ContainsKey(code))
+                    .Select(code => byCode[code])
+                    .ToList();
+                if (next.Count == 0)
+                {
+                    roots.Add(current);
+                    continue;
+                }
+                foreach (var n in next)
+                {
+                    if (visited.Add(n.StationCode))
+                        queue.Enqueue(n);
+                }
+            }
+
+            return roots
+                .OrderByDescending(p => p.RuntimeEvidenceScore)
+                .ThenByDescending(p => p.DirectActuatorFeedbackCount)
+                .ThenBy(p => p.StationOrder)
+                .FirstOrDefault();
+        }
+
+        private static bool IsBlockedByOtherStation(
+            StationRootCauseEvidenceProfile profile,
+            IReadOnlyList<StationRootCauseEvidenceProfile> profiles)
+        {
+            var root = ResolveBlockingRoot(profile, profiles);
+            return root != null && !string.Equals(root.StationCode, profile.StationCode, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 结论落在一个正在等其它异常工位的工位上时，顺着等待链改到源头工位。
+        /// </summary>
+        private static bool ApplyWaitingArbitration(
+            LineDiagnosisLlmReport report,
+            IReadOnlyList<StationRootCauseEvidenceProfile> profiles,
+            bool isEnglishOutput)
+        {
+            if (string.IsNullOrWhiteSpace(report.RootCauseStation))
+                return false;
+
+            var selected = profiles.FirstOrDefault(p =>
+                string.Equals(p.StationCode, report.RootCauseStation, StringComparison.OrdinalIgnoreCase));
+            var root = ResolveBlockingRoot(selected, profiles);
+            if (root == null || string.Equals(root.StationCode, selected.StationCode, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var originalStation = selected.StationCode;
+            var waitText = string.Join(",", selected.WaitingOn);
+            var evidenceText = string.Join(
+                isEnglishOutput ? "; " : "；",
+                root.Reasons.Take(3).Select(r => isEnglishOutput ? TranslateEvidenceReasonToEnglish(r) : r));
+            var correction = isEnglishOutput
+                ? $"Waiting-relation review: the original conclusion leaned toward {originalStation}, but {originalStation} is blocked waiting for {waitText}; following the waiting chain, the blocking source is {root.StationCode}, so the root cause is corrected to {root.StationCode}."
+                : $"等待关系复核：原结论偏向 {originalStation}，但 {originalStation} 正在等待 {waitText}；沿等待链追到的阻塞源头是 {root.StationCode}，因此根因修正为 {root.StationCode}。";
+            if (!string.IsNullOrWhiteSpace(evidenceText))
+                correction += isEnglishOutput ? $" Evidence at {root.StationCode}: {evidenceText}" : $"{root.StationCode} 的证据：{evidenceText}";
+
+            report.RootCauseStation = root.StationCode;
+            report.RootCauseDescription = string.IsNullOrWhiteSpace(report.RootCauseDescription)
+                ? correction
+                : isEnglishOutput
+                    ? $"{correction}\nOriginal LLM description for reference: {report.RootCauseDescription}"
+                    : $"{correction}\n原始LLM描述参考：{report.RootCauseDescription}";
+            report.Reasoning = string.IsNullOrWhiteSpace(report.Reasoning)
+                ? correction
+                : $"{correction}\n{report.Reasoning}";
+            report.Confidence = Math.Min(Math.Max(report.Confidence, 0.75), 0.88);
+
+            var impacted = profiles
+                .Where(p => !string.Equals(p.StationCode, root.StationCode, StringComparison.OrdinalIgnoreCase))
+                .Where(p => string.Equals(ResolveBlockingRoot(p, profiles)?.StationCode, root.StationCode, StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.StationCode)
+                .ToList();
+            report.ImpactChain = impacted.Count > 0
+                ? isEnglishOutput
+                    ? $"Root cause: {root.StationCode} -> Impacted: [{string.Join(",", impacted)}]"
+                    : $"根因:{root.StationCode} → 受影响:[{string.Join(",", impacted)}]"
+                : isEnglishOutput
+                    ? $"Root cause: {root.StationCode}"
+                    : $"根因:{root.StationCode}";
+
+            UpsertStationRole(report, root.StationCode, "RootCause", correction);
+            foreach (var code in impacted)
+            {
+                var waiting = profiles.First(p => string.Equals(p.StationCode, code, StringComparison.OrdinalIgnoreCase));
+                UpsertStationRole(report, code, "Impacted",
+                    isEnglishOutput
+                        ? $"{code} is waiting for {string.Join(",", waiting.WaitingOn)}; its abnormal signals are a consequence of the stop at {root.StationCode}."
+                        : $"{code} 在等待 {string.Join(",", waiting.WaitingOn)}，其异常信号是 {root.StationCode} 停机带来的连带结果。");
+            }
+            if (!report.SecondaryCauses.Any(s =>
+                    string.Equals(s.StationCode, originalStation, StringComparison.OrdinalIgnoreCase)))
+            {
+                report.SecondaryCauses.Add(new SecondaryCauseItem
+                {
+                    StationCode = originalStation,
+                    Description = isEnglishOutput
+                        ? $"{originalStation} shows a stop symptom, but it is waiting for {waitText}; it is impacted by {root.StationCode}."
+                        : $"{originalStation} 有停机表现，但它在等待 {waitText}，属于被 {root.StationCode} 连带影响。",
+                });
+            }
+
+            var action = isEnglishOutput
+                ? $"Check {root.StationCode} first (the station others are waiting for): {evidenceText}"
+                : $"优先检查 {root.StationCode}（其它工位都在等它）：{evidenceText}";
+            if (!report.SuggestedActions.Any(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase)))
+                report.SuggestedActions.Insert(0, action);
+            return true;
+        }
+
         private static string BuildEvidenceCorrectionText(
             string originalStation,
             StationRootCauseEvidenceProfile top,
@@ -1046,7 +1294,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             return reason
                 .Replace("直接执行机构/到位反馈异常:", "direct actuator or position feedback abnormal:", StringComparison.OrdinalIgnoreCase)
                 .Replace("明确报警/故障信号:", "explicit alarm or fault signal:", StringComparison.OrdinalIgnoreCase)
-                .Replace("IO物理约束强证据:", "strong IO physical constraint evidence:", StringComparison.OrdinalIgnoreCase)
+                .Replace("IO物理约束证据:", "IO physical constraint evidence:", StringComparison.OrdinalIgnoreCase)
                 .Replace("流程状态/握手条件未满足:", "process or handshake condition not satisfied:", StringComparison.OrdinalIgnoreCase)
                 .Replace("可疑信号:", "suspicious signal:", StringComparison.OrdinalIgnoreCase);
         }

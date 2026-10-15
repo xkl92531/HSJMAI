@@ -48,7 +48,19 @@ public class ValveAlarmPromptFormatterTests
         Assert.Contains("反馈 X=未读到", text);
         Assert.Contains("[缩回条件不满足警告] DB290_OP20Alarm.Type.CylinderOutErrors.OP020_CYL07_FwdError", text);
         Assert.Contains("读取失败的报警位", text);
-        Assert.Contains("工位即使在下方被列为正常/运行中，其阀门报警仍是有效证据，需要结合判断。", text);
+        Assert.Contains("工位即使在下方被列为正常/运行中，其执行机构故障报警仍是有效证据，需要结合判断。", text);
+    }
+
+    [Fact]
+    public void LockWarningsAreMarkedAsLikelyConsequencesNotRootCauseEvidence()
+    {
+        var text = Render(Station("OP010", 1, Alarm("FwdLock", "气缸7伸出条件不满足")), Station("OP030", 3, Alarm("FwdError", "气缸7伸出未到位报警")));
+
+        Assert.Contains("条件不满足警告只说明该阀的联锁/前置条件没满足", text);
+        var lockLine = text.Split(Environment.NewLine).Single(l => l.Contains("气缸7伸出条件不满足"));
+        Assert.EndsWith("→ 动作条件未满足，多为被阻塞的结果", lockLine);
+        var errorLine = text.Split(Environment.NewLine).Single(l => l.Contains("气缸7伸出未到位报警"));
+        Assert.DoesNotContain("被阻塞", errorLine);
     }
 
     [Fact]

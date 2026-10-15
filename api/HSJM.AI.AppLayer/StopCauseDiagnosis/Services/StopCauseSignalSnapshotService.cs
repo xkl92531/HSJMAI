@@ -229,7 +229,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             // 一次读全量，不再做 _S7/_Plus 两跳回退（IGW 下无此设备模型）。
             if (!DcsIgwConsts.IsLegacyIotGatewayUrl(host))
             {
-                return await ReadExactViaIgwAsync(projectId, stationCode, symbols);
+                return await ReadExactViaIgwAsync(projectId, stationCode, symbols, ioTagMap);
             }
 
             Stopwatch watch = Stopwatch.StartNew();
@@ -259,37 +259,17 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         /// 符号按 {Block}.{Path} 拆分为精确读请求（RequestKey=canonical 符号），内部已完成：
         /// ①iotag/块接口候选校验（EXEC_BITS 运行时符号有块接口回退）；②工步元素路径→
         /// 数组容器整组读回本地展开；③普通符号→通用.S1500_{ip}.{path} 别名 ReadTagsAsList；
-        /// ④缺失/坏点按 Unknown+ErrorCode 降级。无块段（如 IOTag 名）直接标坏（IGW 无绝对地址通道）。
+        /// ④缺失/坏点按 Unknown+ErrorCode 降级。无块段的 IOTag 短名按 I/O 表换成 TableName.TagName 再读；
+        /// I/O 表里也没有的无块段符号才标坏（IGW 无绝对地址通道）。
         /// </summary>
         private async Task<List<PLC_ReadTagResult>> ReadExactViaIgwAsync(
             long projectId,
             string stationCode,
-            IReadOnlyList<string> symbols)
+            IReadOnlyList<string> symbols,
+            Dictionary<string, List<string>> ioTagMap)
         {
             var results = new List<PLC_ReadTagResult>();
-            var requests = new List<PLC_ExactReadRequest>();
-            var noBlockSymbols = new List<string>();
-
-            foreach (var symbol in symbols)
-            {
-                var canonical = NormalizeSymbolPath(symbol);
-                if (string.IsNullOrWhiteSpace(canonical))
-                {
-                    continue;
-                }
-
-                var firstDot = canonical.IndexOf('.');
-                if (firstDot <= 0 || firstDot == canonical.Length - 1)
-                {
-                    noBlockSymbols.Add(canonical);
-                    continue;
-                }
-
-                requests.Add(new PLC_ExactReadRequest(
-                    canonical,
-                    canonical.Substring(0, firstDot),
-                    canonical.Substring(firstDot + 1)));
-            }
+            var requests = BuildIgwExactReadRequests(symbols, ioTagMap, out var noBlockSymbols);
 
             if (requests.Count > 0)
             {
@@ -322,6 +302,52 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 .GroupBy(it => it.TagName, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.OrderByDescending(it => it.IsGood).First())
                 .ToList();
+        }
+
+        internal static List<PLC_ExactReadRequest> BuildIgwExactReadRequests(
+            IReadOnlyList<string> symbols,
+            Dictionary<string, List<string>> ioTagMap,
+            out List<string> unresolvedSymbols)
+        {
+            var requests = new List<PLC_ExactReadRequest>();
+            unresolvedSymbols = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var symbol in symbols ?? Array.Empty<string>())
+            {
+                var canonical = NormalizeSymbolPath(symbol);
+                if (string.IsNullOrWhiteSpace(canonical) || !seen.Add(canonical))
+                {
+                    continue;
+                }
+
+                // 没有块名的全局 I/O 变量（如 OP030_CYL05_W）：按 I/O 表换成「表名.变量名」再读，
+                // 与老网关路径（BuildReadTagCandidates）和 ReadTagsByFixedDeviceAsync 的 IGW 分支一致。
+                // RequestKey 仍用原符号，读回的结果直接对得上 AST 里的叶子名
+                var fullPath = canonical;
+                var firstDot = fullPath.IndexOf('.');
+                if ((firstDot <= 0 || firstDot == fullPath.Length - 1)
+                    && ioTagMap != null
+                    && ioTagMap.TryGetValue(canonical, out var tableTagCandidates)
+                    && tableTagCandidates?.FirstOrDefault(it => !string.IsNullOrWhiteSpace(it)) is { } tableTag)
+                {
+                    fullPath = tableTag.Trim();
+                    firstDot = fullPath.IndexOf('.');
+                }
+
+                if (firstDot <= 0 || firstDot == fullPath.Length - 1)
+                {
+                    unresolvedSymbols.Add(canonical);
+                    continue;
+                }
+
+                requests.Add(new PLC_ExactReadRequest(
+                    canonical,
+                    fullPath.Substring(0, firstDot),
+                    fullPath.Substring(firstDot + 1)));
+            }
+
+            return requests;
         }
 
         private async Task<List<PLC_ReadTagResult>> ReadTagsAsync(

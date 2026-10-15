@@ -315,6 +315,7 @@ English JSON style example:
             {
                 sb.AppendLine("## IO 约束证据报告（内部参考）");
                 sb.AppendLine("以下约束结果来自实时 IO 约束检测。若包含 I点地址，请在最终结论中明确输出信号名和地址。");
+                sb.AppendLine("约束违反说明该工位确有异常，但不等于它是停机源头：先按工位间等待关系确定阻塞源头工位，等待其它工位的工位上的约束违反按连带结果处理。");
                 sb.AppendLine("注意：不要把“IO约束诊断确认”作为最终结论开头；面向用户请统一写成“AI诊断确认存在故障”，再说明具体信号、点位和故障现象。");
                 sb.AppendLine(constraintReport);
                 sb.AppendLine();
