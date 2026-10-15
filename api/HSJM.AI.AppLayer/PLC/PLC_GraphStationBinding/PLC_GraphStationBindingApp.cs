@@ -396,16 +396,19 @@ WHERE ""IsDeleted"" = false AND LOWER(""Code"") = LOWER(@code) LIMIT 1";
                 foreach (var group in suggestions.GroupBy(x => x.StationCode.Trim(), StringComparer.OrdinalIgnoreCase))
                 {
                     var projectIds = group.Select(x => x.ProjectId.Value).Distinct().ToList();
-                    var lowerNames = group.Select(x => x.BlockName.Trim().ToLowerInvariant()).Distinct().ToList();
-                    var blockIds = await _db.Queryable<PLC_BlockEntity>()
-                        .Where(b => b.IsDeleted == false
-                            && b.ProgrammingLanguage == "GRAPH"
-                            && b.ProjectId != null
-                            && projectIds.Contains(b.ProjectId.Value)
-                            && lowerNames.Contains(SqlFunc.ToLower(b.BlockName)))
+                    var names = group.Select(x => x.BlockName.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    // 块名比较放在内存里做（不依赖 SQL 函数翻译）；一个项目的 GRAPH 块只有几十到几百个
+                    var blockIds = (await _db.Queryable<PLC_BlockEntity>()
+                            .Where(b => b.IsDeleted == false
+                                && b.ProgrammingLanguage == "GRAPH"
+                                && b.ProjectId != null
+                                && projectIds.Contains(b.ProjectId.Value))
+                            .Select(b => new { b.Id, b.BlockName })
+                            .ToListAsync()
+                            .ConfigureAwait(false))
+                        .Where(b => names.Contains((b.BlockName ?? string.Empty).Trim()))
                         .Select(b => b.Id)
-                        .ToListAsync()
-                        .ConfigureAwait(false);
+                        .ToList();
                     if (blockIds.Count == 0)
                     {
                         foreach (var name in group.Select(x => x.BlockName.Trim()).Distinct())
@@ -498,25 +501,24 @@ WHERE ""IsDeleted"" = false AND LOWER(""Code"") = LOWER(@code) LIMIT 1";
         /// <summary>按「项目 + 块名」读出这批块现有的全部有效绑定行（块名不区分大小写）</summary>
         private async Task<List<PLC_StationBlockBindingEntity>> LoadLiveBindingsAsync(IReadOnlyCollection<GraphBlockRef> blocks)
         {
+            // 块名比较放在内存里做（不依赖 SQL 函数翻译）；一个项目的绑定行只有几百条
             var result = new List<PLC_StationBlockBindingEntity>();
             foreach (var projectGroup in blocks.GroupBy(b => b.ProjectId))
             {
                 var projectId = projectGroup.Key;
-                var lowerNames = projectGroup
-                    .Select(b => (b.BlockName ?? string.Empty).Trim().ToLowerInvariant())
+                var names = projectGroup
+                    .Select(b => (b.BlockName ?? string.Empty).Trim())
                     .Where(n => n.Length > 0)
-                    .Distinct()
-                    .ToList();
-                foreach (var chunk in lowerNames.Chunk(NameChunkSize))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (names.Count == 0)
                 {
-                    var names = chunk.ToList();
-                    result.AddRange(await _db.Queryable<PLC_StationBlockBindingEntity>()
-                        .Where(x => x.IsDeleted == false
-                            && x.ProjectId == projectId
-                            && names.Contains(SqlFunc.ToLower(x.BlockName)))
-                        .ToListAsync()
-                        .ConfigureAwait(false));
+                    continue;
                 }
+                result.AddRange((await _db.Queryable<PLC_StationBlockBindingEntity>()
+                        .Where(x => x.IsDeleted == false && x.ProjectId == projectId)
+                        .ToListAsync()
+                        .ConfigureAwait(false))
+                    .Where(x => names.Contains((x.BlockName ?? string.Empty).Trim())));
             }
             return result;
         }
@@ -529,14 +531,21 @@ WHERE ""IsDeleted"" = false AND LOWER(""Code"") = LOWER(@code) LIMIT 1";
             long operatorId,
             string operatorName)
         {
-            var remaining = await _db.Queryable<PLC_StationBlockBindingEntity>()
-                .Where(x => x.IsDeleted == false && x.ProjectId == projectId && SqlFunc.ToLower(x.BlockName) == lowerBlockName)
-                .ToListAsync()
-                .ConfigureAwait(false);
-            var blocks = await _db.Queryable<PLC_BlockEntity>()
-                .Where(b => b.IsDeleted == false && b.ProjectId == projectId && SqlFunc.ToLower(b.BlockName) == lowerBlockName)
-                .ToListAsync()
-                .ConfigureAwait(false);
+            // 块名比较放在内存里做（不依赖 SQL 函数翻译）
+            bool SameName(string name) => string.Equals((name ?? string.Empty).Trim(), lowerBlockName, StringComparison.OrdinalIgnoreCase);
+            var remaining = (await _db.Queryable<PLC_StationBlockBindingEntity>()
+                    .Where(x => x.IsDeleted == false && x.ProjectId == projectId)
+                    .ToListAsync()
+                    .ConfigureAwait(false))
+                .Where(x => SameName(x.BlockName))
+                .ToList();
+            var blocks = (await _db.Queryable<PLC_BlockEntity>()
+                    .Where(b => b.IsDeleted == false && b.ProjectId == projectId)
+                    .Select(b => new PLC_BlockEntity { Id = b.Id, BlockName = b.BlockName, StationCode = b.StationCode })
+                    .ToListAsync()
+                    .ConfigureAwait(false))
+                .Where(b => SameName(b.BlockName))
+                .ToList();
             if (blocks.Count == 0)
             {
                 return (0, 0);

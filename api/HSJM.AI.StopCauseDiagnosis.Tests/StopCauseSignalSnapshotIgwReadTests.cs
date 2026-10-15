@@ -39,6 +39,19 @@ public class StopCauseSignalSnapshotIgwReadTests
     }
 
     [Fact]
+    public void Io_table_point_whose_name_contains_a_dot_is_read_through_its_io_table()
+    {
+        // IQ 表的点名常带地址里的小数点（I106.2_SG），不能拆成块 I106 + 成员 2_SG
+        var requests = StopCauseSignalSnapshotService.BuildIgwExactReadRequests(
+            ["I106.2_SG"],
+            IoTagMap(("I106.2_SG", "IQ.I106.2_SG")),
+            out var unresolved);
+
+        Assert.Equal(new PLC_ExactReadRequest("I106.2_SG", "IQ", "I106.2_SG"), Assert.Single(requests));
+        Assert.Empty(unresolved);
+    }
+
+    [Fact]
     public void Block_qualified_symbol_is_read_as_before()
     {
         var requests = StopCauseSignalSnapshotService.BuildIgwExactReadRequests(

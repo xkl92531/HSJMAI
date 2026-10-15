@@ -2384,7 +2384,8 @@ namespace HSJM.AI.DbService
             // 2026-09-18 全 IGW 迁移：非 2500 老网关改走精确读——"PLC1IO_S7" 是老网关 deviceName 模型，
             // IGW 无此路由（曾静默返回空表，气缸信号采集在 IGW 项目上采不到任何值）。
             // 入参短名（如 OP030_CYL01_W）先按 iotag.TagName 解析出 {TableName}.{TagName} 全路径再精确读；
-            // 纯 %I/%Q 绝对地址信号（TableName=IQ）IGW 同设备不支持，按行降级 IsGood=false。
+            // IQ 表（点名带地址小数点，如 I106.2_SG）同样按 iotag 换成「IQ.点名」走 IO 别名读（2026-10-15 修正：
+            // 以前先按小数点拆块段，IQ 表的点一律读不到，并非 IGW 不支持）；既不在 iotag、又无块段的才降级 IsGood=false。
             if (!DcsIgwConsts.IsLegacyIotGatewayUrl(projectEntity.IotUrl))
             {
                 return await ReadNamedTagsViaIgwAsync(projectId, normalizedTagNames).ConfigureAwait(false);
@@ -2396,10 +2397,54 @@ namespace HSJM.AI.DbService
 
         /// <summary>
         /// 2026-09-18 全 IGW 迁移：ReadTagsByFixedDeviceAsync 的 IGW 分支。
-        /// 名称解析优先级：①本身含块段（DB6000_StdSignal.xxx 形态）直接精确读；②iotag.TagName 短名
-        /// 反查全路径（TableName.TagName）后精确读；③无块段且 iotag 无此名 → IsGood=false（IgwNoBlockSegment）。
+        /// 名称解析优先级（2026-10-15 调整）：①iotag.TagName 命中 → 换成全路径（TableName.TagName）精确读
+        /// （含点名带小数点的 IQ 表点）；②本身含块段（DB6000_StdSignal.xxx 形态）直接精确读；
+        /// ③无块段且 iotag 无此名 → IsGood=false（IgwNoBlockSegment）。见 PlanNamedIgwReads。
         /// 返回全部行（含坏行），与老网关 ReadTags 契约一致，由调用方按 IsGood 过滤。
         /// </summary>
+        /// <summary>
+        /// 把调用方的点名拆成精确读请求（RequestKey = 表名.点名 / 块名.成员，requestNameByKey 回填原始名）。
+        /// 2026-10-15：先查 iotag 短名映射、再看有没有块段——IQ 表点名常带地址里的小数点（I106.2_SG），
+        /// 以前先按小数点拆成「块 I106 + 成员 2_SG」，IQ 表的点在 IGW 上一律读不到。
+        /// 既不在 iotag 里、又没有块段的点名按行降级 IsGood=false（IgwNoBlockSegment）。
+        /// </summary>
+        internal static List<PLC_ExactReadRequest> PlanNamedIgwReads(
+            IReadOnlyList<string> tagNames,
+            IReadOnlyDictionary<string, string> byShortName,
+            out List<PLC_ReadTagResult> fallbackRows,
+            out Dictionary<string, string> requestNameByKey)
+        {
+            var requests = new List<PLC_ExactReadRequest>();
+            requestNameByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // RequestKey → 调用方原始名
+            fallbackRows = new List<PLC_ReadTagResult>();
+            foreach (var name in tagNames ?? Array.Empty<string>())
+            {
+                var fullName = byShortName != null && byShortName.TryGetValue(name, out var resolved) ? resolved : name;
+                var firstDot = fullName.IndexOf('.');
+                if (firstDot <= 0 || firstDot == fullName.Length - 1)
+                {
+                    fallbackRows.Add(new PLC_ReadTagResult
+                    {
+                        TagName = name,
+                        IsGood = false,
+                        ErrorMessage = "IgwNoBlockSegment",
+                    });
+                    continue;
+                }
+
+                var requestKey = fullName;
+                if (!requestNameByKey.ContainsKey(requestKey))
+                {
+                    requestNameByKey[requestKey] = name;
+                    requests.Add(new PLC_ExactReadRequest(
+                        requestKey,
+                        fullName.Substring(0, firstDot),
+                        fullName.Substring(firstDot + 1)));
+                }
+            }
+            return requests;
+        }
+
         private async Task<List<PLC_ReadTagResult>> ReadNamedTagsViaIgwAsync(
             long projectId,
             List<string> tagNames)
@@ -2425,39 +2470,7 @@ namespace HSJM.AI.DbService
                 // 元数据查询失败不阻断：退化为直接按入参形态精确读
             }
 
-            var requests = new List<PLC_ExactReadRequest>();
-            var requestNameByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // RequestKey → 调用方原始名
-            var fallbackRows = new List<PLC_ReadTagResult>();
-            foreach (var name in tagNames)
-            {
-                var fullName = name;
-                var firstDot = fullName.IndexOf('.');
-                if (firstDot <= 0 || firstDot == fullName.Length - 1)
-                {
-                    if (!byShortName.TryGetValue(name, out var resolved))
-                    {
-                        fallbackRows.Add(new PLC_ReadTagResult
-                        {
-                            TagName = name,
-                            IsGood = false,
-                            ErrorMessage = "IgwNoBlockSegment",
-                        });
-                        continue;
-                    }
-                    fullName = resolved;
-                    firstDot = fullName.IndexOf('.');
-                }
-
-                var requestKey = fullName;
-                if (!requestNameByKey.ContainsKey(requestKey))
-                {
-                    requestNameByKey[requestKey] = name;
-                    requests.Add(new PLC_ExactReadRequest(
-                        requestKey,
-                        fullName.Substring(0, firstDot),
-                        fullName.Substring(firstDot + 1)));
-                }
-            }
+            var requests = PlanNamedIgwReads(tagNames, byShortName, out var fallbackRows, out var requestNameByKey);
 
             var results = new List<PLC_ReadTagResult>(fallbackRows);
             if (requests.Count > 0)

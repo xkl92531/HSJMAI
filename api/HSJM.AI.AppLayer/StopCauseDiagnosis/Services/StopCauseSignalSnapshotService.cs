@@ -437,16 +437,16 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 // 没有块名的全局 I/O 变量（如 OP030_CYL05_W）：按 I/O 表换成「表名.变量名」再读，
                 // 与老网关路径（BuildReadTagCandidates）和 ReadTagsByFixedDeviceAsync 的 IGW 分支一致。
                 // RequestKey 仍用原符号，读回的结果直接对得上 AST 里的叶子名
+                // 2026-10-15：先查 I/O 表，再看有没有块段——IQ 表点名常带地址里的小数点（I106.2_SG），
+                // 先按小数点拆会变成「块 I106 + 成员 2_SG」而读不到。I/O 表只按点名精确匹配，DB 路径不会误中
                 var fullPath = canonical;
-                var firstDot = fullPath.IndexOf('.');
-                if ((firstDot <= 0 || firstDot == fullPath.Length - 1)
-                    && ioTagMap != null
+                if (ioTagMap != null
                     && ioTagMap.TryGetValue(canonical, out var tableTagCandidates)
                     && tableTagCandidates?.FirstOrDefault(it => !string.IsNullOrWhiteSpace(it)) is { } tableTag)
                 {
                     fullPath = tableTag.Trim();
-                    firstDot = fullPath.IndexOf('.');
                 }
+                var firstDot = fullPath.IndexOf('.');
 
                 if (firstDot <= 0 || firstDot == fullPath.Length - 1)
                 {

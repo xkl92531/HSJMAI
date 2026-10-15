@@ -148,7 +148,7 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
                          .Where(b => !string.IsNullOrWhiteSpace(b.BlockName))
                          .OrderBy(b => b.BlockId))
             {
-                var nameStation = SingleStationInText(block.BlockName);
+                var nameStation = NameDerivedStation(block.BlockName, null, allowed);
                 if (nameStation != null)
                     TryAdd(block.BlockId, block.BlockName, nameStation, NameRuleConfidence, "名称含工位号", null);
             }
@@ -289,7 +289,7 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
         /// <summary>GRAPH 实例 DB 归哪个工位：名字里只有一个（白名单内的）工位号就用它，否则沿用 FB 的工位。</summary>
         public static string? ResolveInstanceStation(string? dbName, string? fbStation, HashSet<string>? allowed)
         {
-            var fromName = Canonicalize(SingleStationInText(dbName), allowed);
+            var fromName = NameDerivedStation(dbName, fbStation, allowed);
             return fromName ?? Canonicalize(fbStation, allowed);
         }
 
@@ -302,7 +302,7 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
             var name = variableName?.Trim() ?? string.Empty;
             var dot = name.IndexOf('.');
             var dbName = dot > 0 ? name.Substring(0, dot) : name;
-            var owner = Canonicalize(SingleStationInText(dbName), allowed);
+            var owner = NameDerivedStation(dbName, stationCode, allowed);
             return owner == null || SameStation(owner, stationCode);
         }
 
@@ -386,6 +386,24 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
             var family = FamilyKey(code);
             return allowed.FirstOrDefault(a => FamilyKey(a) == family);
         }
+
+        /// <summary>
+        /// 从块名 / 实例 DB 名里认出的工位号，只有可信时才用：有白名单时必须在白名单里；没有白名单时
+        /// 前缀要和参照工位一致（参照未知时只认 OP）。避免 Unit2、ST1 这类别的命名片段被当成工位。
+        /// </summary>
+        private static string? NameDerivedStation(string? text, string? referenceStation, HashSet<string>? allowed)
+        {
+            var code = SingleStationInText(text);
+            if (code == null) return null;
+            if (allowed != null) return Canonicalize(code, allowed);
+
+            var reference = StationCodeHeuristics.NormalizeStationCode(referenceStation ?? string.Empty);
+            var expectedPrefix = reference.Length > 0 ? StationPrefix(reference) : "OP";
+            return string.Equals(StationPrefix(code), expectedPrefix, StringComparison.OrdinalIgnoreCase) ? code : null;
+        }
+
+        private static string StationPrefix(string normalizedCode) =>
+            new string(normalizedCode.TakeWhile(ch => !char.IsDigit(ch)).ToArray());
 
         /// <summary>文本里只出现一个工位（同族算一个）时返回它的规范写法（如 OP20 → OP020），否则 null。</summary>
         private static string? SingleStationInText(string? text)

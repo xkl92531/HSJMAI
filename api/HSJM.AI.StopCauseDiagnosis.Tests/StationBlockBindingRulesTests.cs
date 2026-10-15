@@ -354,6 +354,29 @@ public class StationBlockBindingRulesTests
         Assert.Equal(expected, StationBlockBindingRules.IsSameStation(left, right));
     }
 
+    [Theory]
+    [InlineData("DB201_Unit2_Graph.RT_DATA.EXEC_BITS.EXEC_BITS[0]")]  // Unit2 不是工位
+    [InlineData("DB100_ST1_Graph.RT_DATA.EXEC_BITS.EXEC_BITS[0]")]    // ST1 不是本产线的工位写法
+    public void Station_like_tokens_of_another_naming_scheme_do_not_exclude_exec_bits(string variable)
+    {
+        Assert.True(StationBlockBindingRules.ExecBitBelongsToStation(variable, "OP030", null));
+    }
+
+    [Fact]
+    public void Instance_name_with_another_naming_scheme_falls_back_to_the_fb_station()
+    {
+        Assert.Equal("OP010", StationBlockBindingRules.ResolveInstanceStation("DB201_Unit2_Graph", "OP010", null));
+    }
+
+    [Fact]
+    public void Without_whitelist_only_op_station_numbers_in_block_names_become_suggestions()
+    {
+        var suggestions = StationBlockBindingRules.BuildSuggestions(
+            Project, [], [Block(1, "FB201_Unit2_Graph"), Block(2, "FB220_OP20Manual")], [], null);
+
+        Assert.Equal("OP020", Assert.Single(suggestions).StationCode);
+    }
+
     [Fact]
     public void Exec_bits_of_another_stations_instance_do_not_belong_to_this_station()
     {
