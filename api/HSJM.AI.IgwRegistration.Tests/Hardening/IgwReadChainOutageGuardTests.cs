@@ -33,7 +33,7 @@ public class IgwReadChainOutageGuardTests
             var projectService = Fake.Create<IPLC_ProjectService>((m, a) => m.Name == nameof(IPLC_ProjectService.GetById) ? project : null);
             var iot = Fake.Create<IIotService>((m, a) =>
             {
-                if (m.Name != nameof(IIotService.ReadTagsAsList))
+                if (m.Name != nameof(IIotService.ReadTagsAsList) && m.Name != nameof(IIotService.ReadTagsWithQualityAsync))
                 {
                     return null;
                 }
@@ -50,6 +50,12 @@ public class IgwReadChainOutageGuardTests
                         ? JsonDocument.Parse("[false,true]").RootElement.Clone()
                         : (object)true,
                 }).ToList();
+                if (m.Name == nameof(IIotService.ReadTagsWithQualityAsync))
+                    return Task.FromResult(new IgwTransportResult<List<DcsTagQualityItem>> { IsHttpSuccess = true,
+                        HttpStatusCode = System.Net.HttpStatusCode.OK,
+                        Envelope = new HttpResponseResultModel<List<DcsTagQualityItem>> { IsSuccess = true,
+                            BackResult = rows.Select(r => new DcsTagQualityItem { Key = r.TagName, Value = r.Value,
+                                IsGood = r.IsGood, Status = "Good", TimestampUtc = DateTime.UtcNow }).ToList() } });
                 return Task.FromResult(new HttpResponseResultModel<List<PLC_ReadTagResult>> { IsSuccess = true, BackResult = rows });
             });
             var ledger = Fake.Create<IPLC_IgwRegistrationService>((m, a) =>

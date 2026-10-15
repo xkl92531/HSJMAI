@@ -6,8 +6,10 @@ export interface GraphStationBindingItem {
   bindingId: string
   /** 工站代码（Basic_WorkStation.Code，如 OP010） */
   stationCode: string
-  /** 绑定原因（手动绑定 / DerivedFromStationColoring+BlockCall 等） */
+  /** 绑定原因（手动绑定 / 自动建议:名称含工位号 / 历史 DerivedFromStationColoring+BlockCall 等） */
   reason: string | null
+  /** 绑定状态：Manual（人工绑定或已确认）/ Suggested（自动建议）；旧后端无此字段时按 reason 判断 */
+  status?: string | null
   /** 归属置信度（手动绑定恒为 1） */
   confidence: number | null
   /** 是否共享块（一块多站） */
@@ -25,6 +27,8 @@ export interface GraphStationBoundBlock {
   /** 所属 PLC 项目 Id（ai_plc_project_new.id） */
   plcProjectId: string
   bindings: GraphStationBindingItem[]
+  /** 被拒绝过的自动建议工站（以后提取不再建议到这些工站） */
+  rejectedStations?: string[]
 }
 
 export interface GraphStationBindSkip { blockName: string, reason: string }
@@ -36,12 +40,20 @@ export interface GraphStationBindResult {
   updatedBlockCount: number
   skippedCount: number
   skipped: GraphStationBindSkip[]
+  /** GRAPH 步位重新注册的排队说明（无改动时为空） */
+  registrationMessage?: string | null
 }
 
 /** 解绑结果 */
 export interface GraphStationUnbindResult {
   unboundCount: number
+  /** 其中被改记为「已拒绝」的自动建议行数 */
+  rejectedCount?: number
+  /** 工位回退为剩余绑定 / 染色结果的块数 */
+  restoredBlockCount?: number
   clearedBlockCount: number
+  /** GRAPH 步位重新注册的排队说明（无改动时为空） */
+  registrationMessage?: string | null
 }
 
 export interface GraphStationBindRequest {
@@ -106,6 +118,22 @@ export default {
   bind: async (request: GraphStationBindRequest): Promise<GraphStationBindResult> => {
     const res: any = await api.post(`${routerName}/Bind`, request)
     return unwrap<GraphStationBindResult>(res, 'GraphStationBindingRequestFailed')
+  },
+
+  /**
+   * 确认自动建议，转为手动绑定（POST /PLC_GraphStationBinding/AcceptSuggestions）
+   */
+  acceptSuggestions: async (request: GraphStationUnbindRequest): Promise<GraphStationBindResult> => {
+    const res: any = await api.post(`${routerName}/AcceptSuggestions`, request)
+    return unwrap<GraphStationBindResult>(res, 'GraphStationBindingRequestFailed')
+  },
+
+  /**
+   * 拒绝自动建议：以后提取不再建议到该工站（POST /PLC_GraphStationBinding/RejectSuggestions）
+   */
+  rejectSuggestions: async (request: GraphStationUnbindRequest): Promise<GraphStationUnbindResult> => {
+    const res: any = await api.post(`${routerName}/RejectSuggestions`, request)
+    return unwrap<GraphStationUnbindResult>(res, 'GraphStationBindingRequestFailed')
   },
 
   /**

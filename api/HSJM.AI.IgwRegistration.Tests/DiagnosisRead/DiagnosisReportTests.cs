@@ -268,6 +268,7 @@ public class DiagnosisReportTests
     {
         var constraintReport = string.Join("\n",
             "1. 工位: OP010",
+            "判定: 确认违规",
             "当前值: X_CYL01_W(%I1.0)=true, OP020-FZ92(%I2.0)=未采到(通讯故障)",
             "原因: 违反约束");
 

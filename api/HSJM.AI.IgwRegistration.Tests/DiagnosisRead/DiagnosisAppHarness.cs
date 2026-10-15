@@ -11,6 +11,10 @@ internal sealed class DiagnosisAppHarness
     public readonly List<PLC_IOConstraintRuleEntity> Rules = new();
     public readonly List<PLC_IOConstraintSignalEntity> Signals = new();
     public readonly List<PLC_IOTagEntity> IoTags = new();
+    public readonly List<PLC_BlockEntity> Blocks = new();
+    public readonly List<PLC_BlockInterfaceEntity> BlockInterfaces = new();
+    public readonly List<PLC_LogicUnitEntity> Units = new();
+    public readonly List<PLC_VariableAccessEntity> ExtraAccesses = new();
     public readonly Dictionary<long, Func<Task<PLC_DiagnosticReadResult>>> Reads = new();
 
     /// <summary>精确读处理器（门控 DB 源补读 / 违反复核），按调用顺序依次取，不足时重复最后一个。</summary>
@@ -89,7 +93,7 @@ internal sealed class DiagnosisAppHarness
                 // 每个约束信号都有 VariableAccess 记录 → 不被预过滤剔除
                 return Task.FromResult(Signals.Select(s => s.SignalName).Distinct()
                     .Select(n => new PLC_VariableAccessEntity { VariableName = n, LogicUnitId = 1, IsDeleted = false })
-                    .ToList());
+                    .Concat(ExtraAccesses).ToList());
             }
             if (m.Name == nameof(IPLC_VariableAccessService.ReadDiagnosticSignalsAsync))
             {
@@ -107,7 +111,13 @@ internal sealed class DiagnosisAppHarness
             }
             throw new NotSupportedException("IPLC_VariableAccessService." + m.Name);
         });
-        return new DiagnosticStrategyFactoryApp(null, null, null, null, variableAccess, rules, signals, tags, projects,
-            null, null, null, null, null);
+        var blocks = Fake.Create<IPLC_BlockService>((m, a) =>
+            m.Name == "GetListAsync" ? Task.FromResult(Blocks) : throw new NotSupportedException(m.Name));
+        var units = Fake.Create<IPLC_LogicUnitService>((m, a) =>
+            m.Name == "GetListAsync" ? Task.FromResult(Units) : throw new NotSupportedException(m.Name));
+        var interfaces = Fake.Create<IPLC_BlockInterfaceService>((m, a) =>
+            m.Name == "GetListAsync" ? Task.FromResult(BlockInterfaces) : throw new NotSupportedException(m.Name));
+        return new DiagnosticStrategyFactoryApp(null, null, units, blocks, variableAccess, rules, signals, tags, projects,
+            null, null, null, null, null, blockInterfaceService: interfaces);
     }
 }

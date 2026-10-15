@@ -905,7 +905,8 @@ namespace HSJM.AI.DbService
                     request,
                     value.Value,
                     value.Quality,
-                    value.ErrorCode);
+                    value.ErrorCode,
+                    value.SourceTimestamp);
             }
 
             return OrderedExactResults(slots, results);
@@ -1587,6 +1588,31 @@ namespace HSJM.AI.DbService
             var symbolPaths = aliasByPath.Keys.ToList();
             if (symbolPaths.Count == 0)
             {
+                return;
+            }
+
+            if (!keepPolling)
+            {
+                // Diagnosis needs the PLC sample time, including for values which have not changed.
+                // The quality reader preserves per-point quality and timestamps; older IGW versions
+                // retain their bounded list fallback, whose missing timestamp stays unknown to consumers.
+                var readings = await new IgwDiagnosticReader(_iotService, requestTimeout: IgwExactReadTimeout)
+                    .ReadAsync(iotUrl, aliases, cancellationToken);
+                foreach (var path in symbolPaths)
+                {
+                    if (!readings.TryGetValue(aliasByPath[path], out var reading))
+                    {
+                        values[path] = new(null, PLC_ExactReadQuality.Unknown, "PlcExactResponseMissing");
+                        continue;
+                    }
+                    DateTimeOffset? timestamp = reading.TimestampUtc is { } time
+                        ? new DateTimeOffset(time.Kind == DateTimeKind.Unspecified
+                            ? DateTime.SpecifyKind(time, DateTimeKind.Utc) : time).ToUniversalTime()
+                        : null;
+                    values[path] = reading.Status == PLC_SignalReadStatus.Good
+                        ? new(reading.Value, PLC_ExactReadQuality.Good, null, timestamp)
+                        : new(null, PLC_ExactReadQuality.Unknown, reading.Detail ?? reading.Status.ToString(), timestamp);
+                }
                 return;
             }
 
@@ -2329,7 +2355,8 @@ namespace HSJM.AI.DbService
             NormalizedExactRequest request,
             object? value,
             PLC_ExactReadQuality quality,
-            string? errorCode) =>
+            string? errorCode,
+            DateTimeOffset? sourceTimestamp = null) =>
             new(
                 request.RequestKey,
                 request.BlockName,
@@ -2337,7 +2364,7 @@ namespace HSJM.AI.DbService
                 request.CanonicalPath,
                 value,
                 quality,
-                SourceTimestamp: null,
+                SourceTimestamp: sourceTimestamp,
                 errorCode);
 
         private sealed record NormalizedExactRequest(
@@ -2358,7 +2385,8 @@ namespace HSJM.AI.DbService
         private sealed record ExactTransportValue(
             object? Value,
             PLC_ExactReadQuality Quality,
-            string? ErrorCode);
+            string? ErrorCode,
+            DateTimeOffset? SourceTimestamp = null);
 
         // 注：GetReadData 契约保持老网关链路原样（LineUp 等调用方按 IsGood 处理）；约束诊断改用
         // ReadDiagnosticSignalsAsync（D-1，2026-09-19：IGW 按台账别名逐点带质量读取，缺值不当通过）。

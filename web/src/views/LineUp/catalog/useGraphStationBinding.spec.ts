@@ -1,7 +1,7 @@
 import type { LineUpGraphCatalogLookup } from '@/api/modules/LineUp/catalog'
 import type { GraphStationBoundBlock } from '@/api/modules/PLC/graphStationBinding'
 import { describe, expect, it } from 'vitest'
-import { useGraphStationBinding, type GraphStationBindingGateway } from './useGraphStationBinding'
+import { bindingStatusOf, registrationNotice, useGraphStationBinding, type GraphStationBindingGateway } from './useGraphStationBinding'
 
 function block(blockId: string, projectId: string, bindings: GraphStationBoundBlock['bindings']): GraphStationBoundBlock {
   return {
@@ -68,6 +68,23 @@ function fixture() {
       calls.push({ name: 'unbind', value: request })
       blocks = blocks.map(item => ({ ...item, bindings: item.bindings.filter(b => !request.bindingIds.includes(b.bindingId)) }))
       return { unboundCount: request.bindingIds.length, clearedBlockCount: request.bindingIds.length }
+    },
+    async acceptSuggestions(request) {
+      calls.push({ name: 'accept', value: request })
+      blocks = blocks.map(item => ({
+        ...item,
+        bindings: item.bindings.map(b => request.bindingIds.includes(b.bindingId) ? { ...b, reason: '手动绑定', status: 'Manual', confidence: 1 } : b),
+      }))
+      return { boundCount: request.bindingIds.length, movedCount: 0, updatedBlockCount: 0, skippedCount: 0, skipped: [], registrationMessage: '已排队 GRAPH 步位重新注册：THEONE-PLC2' }
+    },
+    async rejectSuggestions(request) {
+      calls.push({ name: 'reject', value: request })
+      blocks = blocks.map(item => ({
+        ...item,
+        bindings: item.bindings.filter(b => !request.bindingIds.includes(b.bindingId)),
+        rejectedStations: item.bindings.filter(b => request.bindingIds.includes(b.bindingId)).map(b => b.stationCode),
+      }))
+      return { unboundCount: request.bindingIds.length, rejectedCount: request.bindingIds.length, restoredBlockCount: 0, clearedBlockCount: 1, registrationMessage: '' }
     },
     async rerunRegistration(projectId) {
       calls.push({ name: 'rerun', value: projectId })
@@ -240,6 +257,67 @@ describe('useGraphStationBinding', () => {
     const line2 = workspace2.tree.value[0]
     expect(line2?.children?.[0]?.children?.map(n => n.key)).toEqual(['station:30'])
     expect(line2?.children?.[0]?.children?.[0]?.children?.map(n => n.kind)).toEqual(['block'])
+  })
+
+  it('tells manual bindings from automatic suggestions', () => {
+    expect(bindingStatusOf({ status: 'Manual', reason: '自动建议:名称含工位号' })).toBe('Manual')
+    expect(bindingStatusOf({ status: 'Suggested', reason: '手动绑定' })).toBe('Suggested')
+    // 旧后端没有 status 字段时按 reason 认：只有「手动绑定」是人工的，其余都是自动建议
+    expect(bindingStatusOf({ reason: '手动绑定' })).toBe('Manual')
+    expect(bindingStatusOf({ reason: 'DerivedFromStationColoring+BlockCall' })).toBe('Suggested')
+    expect(bindingStatusOf({ reason: null })).toBe('Suggested')
+  })
+
+  it('marks block leaves in the tree as manual or automatic', async () => {
+    const value = fixture()
+    const workspace = useGraphStationBinding(value.gateway)
+    await workspace.initialize()
+    const manual = findNode(workspace.tree.value, 'binding:700')
+    expect(manual.bindingStatus).toBe('Manual')
+    const suggested = findNode(workspace.tree.value, 'binding:701')
+    expect(suggested.bindingStatus).toBe('Suggested')
+    expect(suggested.confidence).toBe(0.98)
+    expect(suggested.reason).toBe('DerivedFromStationColoring+BlockCall')
+  })
+
+  it('accepts a suggestion as a manual binding and reloads blocks', async () => {
+    const value = fixture()
+    const workspace = useGraphStationBinding(value.gateway)
+    await workspace.initialize()
+    const result = await workspace.acceptSuggestions(['701'])
+    expect(value.calls.filter(c => c.name === 'accept').pop()?.value).toEqual({ bindingIds: ['701'] })
+    expect(registrationNotice(result)).toBe('已排队 GRAPH 步位重新注册：THEONE-PLC2')
+    expect(findNode(workspace.tree.value, 'binding:701').bindingStatus).toBe('Manual')
+  })
+
+  it('rejects a suggestion and the block returns to the unbound list', async () => {
+    const value = fixture()
+    const workspace = useGraphStationBinding(value.gateway)
+    await workspace.initialize()
+    workspace.selectNode('station:31:sub:41')
+    expect(workspace.unboundBlocks.value.map(b => b.blockName)).toEqual(['FB902_Graph'])
+    const result = await workspace.rejectSuggestions(['701'])
+    expect(value.calls.filter(c => c.name === 'reject').pop()?.value).toEqual({ bindingIds: ['701'] })
+    expect(result.rejectedCount).toBe(1)
+    expect(findNode(workspace.tree.value, 'binding:701')).toBeNull()
+    expect(workspace.unboundBlocks.value.map(b => b.blockName).sort()).toEqual(['FB902_Graph', 'FB903_Graph'])
+  })
+
+  it('refuses to accept or reject without binding ids', async () => {
+    const value = fixture()
+    const workspace = useGraphStationBinding(value.gateway)
+    await workspace.initialize()
+    await expect(workspace.acceptSuggestions([])).rejects.toThrow('BindingTargetMissing')
+    await expect(workspace.rejectSuggestions([])).rejects.toThrow('BindingTargetMissing')
+    expect(value.calls.some(c => c.name === 'accept' || c.name === 'reject')).toBe(false)
+  })
+
+  it('reads the re-registration notice from bind results', () => {
+    expect(registrationNotice({ registrationMessage: '  已排队 GRAPH 步位重新注册：PLC1  ' })).toBe('已排队 GRAPH 步位重新注册：PLC1')
+    expect(registrationNotice({ registrationMessage: '' })).toBe('')
+    expect(registrationNotice({ registrationMessage: null })).toBe('')
+    expect(registrationNotice({})).toBe('')
+    expect(registrationNotice(null)).toBe('')
   })
 
   it('reruns graph step registration against the scoped project', async () => {

@@ -92,17 +92,32 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                         .ToList();
                     if (definitions.Count == 0) continue;
 
-                    var reads = await ReadBatchedAsync(project.Key, ValveAlarmEvaluator.BuildAlarmRequests(definitions), readExact, options, stage.Token, ct);
+                    var exactReads = await ReadBatchedAsync(project.Key, ValveAlarmEvaluator.BuildAlarmRequests(definitions), readExact, options, stage.Token, ct);
+                    var reads = CurrentValues(exactReads);
                     var active = definitions.Where(d => ValveAlarmEvaluator.IsActive(d, reads)).ToList();
                     if (active.Count > 0)
                     {
                         var signals = ValveAlarmEvaluator.BuildSignalRequests(active)
-                            .Where(kv => !reads.ContainsKey(kv.Key))
+                            .Where(kv => !exactReads.ContainsKey(kv.Key))
                             .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
                         foreach (var (key, row) in await ReadBatchedAsync(project.Key, signals, readExact, options, stage.Token, ct))
-                            reads[key] = row;
+                            exactReads[key] = row;
                     }
 
+                    // Related reads can consume the rest of the stage budget; recheck the alarm's
+                    // original source time now, rather than keeping a once-fresh true indefinitely.
+                    reads = CurrentValues(exactReads);
+                    var expiredAlarms = ValveAlarmEvaluator.BuildAlarmRequests(active.Where(d =>
+                        reads.TryGetValue(ValveAlarmEvaluator.AlarmReadPath(d), out var row) && !row.IsGood));
+                    if (expiredAlarms.Count > 0 && !stage.IsCancellationRequested)
+                    {
+                        // One bounded refresh of originally active alarms, using the original deadline.
+                        // Remove the old true before reading: a failed refresh must never revive it.
+                        foreach (var key in expiredAlarms.Keys) exactReads.Remove(key);
+                        foreach (var (key, row) in await ReadBatchedAsync(project.Key, expiredAlarms, readExact, options, stage.Token, ct))
+                            exactReads[key] = row;
+                        reads = CurrentValues(exactReads);
+                    }
                     foreach (var byStation in definitions.GroupBy(d => d.StationCode!, StringComparer.OrdinalIgnoreCase))
                     {
                         var (activeAlarms, failed) = ValveAlarmEvaluator.Evaluate(byStation, reads);
@@ -128,11 +143,31 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             return errors.Count == 0 ? null : "报警读取失败：" + string.Join("；", errors);
         }
 
+        /// <summary>按 PLC 原始采样时间检查本次证据，不以接收时刻或信号最后变化时刻替代。</summary>
+        private static Dictionary<string, PLC_ReadTagResult> CurrentValues(IReadOnlyDictionary<string, PLC_ExactReadResult> exactReads)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return exactReads.ToDictionary(pair => pair.Key, pair =>
+            {
+                var row = pair.Value;
+                var age = row.SourceTimestamp is { } timestamp ? now - timestamp : (TimeSpan?)null;
+                var trusted = row.Quality == PLC_ExactReadQuality.Good && string.IsNullOrEmpty(row.ErrorCode)
+                    && age is { } delta && delta >= TimeSpan.FromSeconds(-1) && delta <= TimeSpan.FromSeconds(5);
+                return new PLC_ReadTagResult
+                {
+                    TagName = pair.Key,
+                    Value = trusted ? row.Value : null,
+                    IsGood = trusted,
+                    ErrorMessage = trusted ? null : row.ErrorCode ?? "报警读数缺失、重复、质量异常或源时间戳无效",
+                };
+            }, StringComparer.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// 分批读：每批 BatchSize 点，最多 MaxParallel 批同时在读；一批抛异常或到阶段时限还没回来 → 这批的点不进结果（按读不到算）。
         /// 调用方取消（ct）照常往外抛。到时限时不等仍在读的批（它们的结果丢弃）。
         /// </summary>
-        private static async Task<Dictionary<string, PLC_ReadTagResult>> ReadBatchedAsync(
+        private static async Task<Dictionary<string, PLC_ExactReadResult>> ReadBatchedAsync(
             long projectId,
             IReadOnlyDictionary<string, PLC_ExactReadRequest> requests,
             Func<long, IReadOnlyCollection<PLC_ExactReadRequest>, CancellationToken, Task<IReadOnlyList<PLC_ExactReadResult>>> readExact,
@@ -140,26 +175,19 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             CancellationToken stage,
             CancellationToken ct)
         {
-            var merged = new Dictionary<string, PLC_ReadTagResult>(StringComparer.OrdinalIgnoreCase);
+            var merged = new Dictionary<string, PLC_ExactReadResult>(StringComparer.OrdinalIgnoreCase);
             if (requests.Count == 0) return merged;
             var batchSize = Math.Max(1, options.BatchSize);
             using var gate = new SemaphoreSlim(Math.Max(1, options.MaxParallel));
-            var scope = StopCauseSignalReadScope.Current;
-
-            async Task<List<PLC_ReadTagResult>> Reader(IReadOnlyList<string> keys)
+            async Task<List<PLC_ExactReadResult>> Reader(IReadOnlyList<string> keys)
             {
                 var batch = keys.Where(requests.ContainsKey).Select(k => requests[k]).ToList();
                 var results = await readExact(projectId, batch, stage);
-                return results.Select(r => new PLC_ReadTagResult
-                {
-                    TagName = r.RequestKey,
-                    Value = r.Value,
-                    IsGood = r.Quality == PLC_ExactReadQuality.Good,
-                    ErrorMessage = r.ErrorCode,
-                }).ToList();
+                var expected = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return results.Where(r => r != null && expected.Contains(r.RequestKey)).ToList();
             }
 
-            async Task<List<PLC_ReadTagResult>> OneBatch(IReadOnlyList<string> keys)
+            async Task<List<PLC_ExactReadResult>> OneBatch(IReadOnlyList<string> keys)
             {
                 try
                 {
@@ -171,7 +199,9 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 }
                 try
                 {
-                    var read = scope != null ? scope.ReadAsync(projectId, keys, Reader) : Reader(keys);
+                    // The station scope stores bare values without source timestamps. It cannot prove
+                    // a current alarm after the observation window, so read this stage's evidence afresh.
+                    var read = Reader(keys);
                     // 读取方不一定响应取消：到时限直接不等
                     return await read.WaitAsync(stage);
                 }
@@ -192,9 +222,11 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             var batches = requests.Keys.Chunk(batchSize).Select(chunk => OneBatch(chunk)).ToList();
             var rows = await Task.WhenAll(batches);
             ct.ThrowIfCancellationRequested();
-            foreach (var row in rows.SelectMany(r => r).Where(r => !string.IsNullOrWhiteSpace(r.TagName)))
+            foreach (var group in rows.SelectMany(r => r).Where(r => !string.IsNullOrWhiteSpace(r.RequestKey))
+                .GroupBy(r => r.RequestKey, StringComparer.OrdinalIgnoreCase))
             {
-                if (!merged.TryGetValue(row.TagName, out var existing) || (!existing.IsGood && row.IsGood)) merged[row.TagName] = row;
+                merged[group.Key] = group.Count() == 1 ? group.Single()
+                    : group.First() with { Value = null, Quality = PLC_ExactReadQuality.Unknown, ErrorCode = "报警返回重复读数" };
             }
             return merged;
         }

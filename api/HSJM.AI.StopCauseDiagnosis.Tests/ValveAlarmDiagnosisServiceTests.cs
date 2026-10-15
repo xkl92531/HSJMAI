@@ -12,7 +12,7 @@ public class ValveAlarmDiagnosisServiceTests
         new(1, variable, "FwdError", "Fwd", "Valve[1]", "FB220", 100, 200, 3, null, []) { StationCode = station };
 
     private static PLC_ExactReadResult Result(PLC_ExactReadRequest r, object? value, PLC_ExactReadQuality q = PLC_ExactReadQuality.Good) =>
-        new(r.RequestKey, r.BlockName, r.VariablePath, r.RequestKey, value, q, null, null);
+        new(r.RequestKey, r.BlockName, r.VariablePath, r.RequestKey, value, q, DateTimeOffset.UtcNow, null);
 
     private static List<StationDiagnosisSummaryDto> Summaries() =>
     [
@@ -78,6 +78,111 @@ public class ValveAlarmDiagnosisServiceTests
             { StationCode = station };
 
     private static List<StationDiagnosisSummaryDto> OneStation() => [new() { ProjectId = 1, StationCode = "OP020", OverallStatus = "Running" }];
+
+    [Theory]
+    [InlineData("error")]
+    [InlineData("duplicate")]
+    public async Task ContradictoryExactAlarmResultsCannotBecomeActive(string kind)
+    {
+        var summaries = OneStation();
+        await ValveAlarmDiagnosisService.AttachCoreAsync(summaries,
+            _ => Task.FromResult<IReadOnlyList<ValveAlarmDefinition>>([Def("DB1.A.X", "OP020")]),
+            (_, reqs) => Task.FromResult<IReadOnlyList<PLC_ExactReadResult>>(reqs.SelectMany(r => {
+                var row = Result(r, true) with { SourceTimestamp = DateTimeOffset.UtcNow };
+                return kind == "error" ? new[] { row with { ErrorCode = "BadCommFailure" } } : new[] { row, row };
+            }).ToList()));
+        Assert.Empty(summaries[0].ActiveAlarms);
+        Assert.Equal(1, summaries[0].AlarmReadFailedCount);
+    }
+
+    [Fact]
+    public async Task NativeAlarmDoesNotReuseUntimestampedStationSnapshotCache()
+    {
+        using var scope = StopCauseSignalReadScope.Begin();
+        await scope.ReadAsync(1, ["DB1.A.X"], _ => Task.FromResult(new List<PLC_ReadTagResult> {
+            new() { TagName = "DB1.A.X", Value = true, IsGood = true } }));
+        var summaries = OneStation();
+        await ValveAlarmDiagnosisService.AttachCoreAsync(summaries,
+            _ => Task.FromResult<IReadOnlyList<ValveAlarmDefinition>>([Def("DB1.A.X", "OP020")]),
+            (_, reqs) => Task.FromResult<IReadOnlyList<PLC_ExactReadResult>>(reqs.Select(r =>
+                Result(r, false) with { SourceTimestamp = DateTimeOffset.UtcNow }).ToList()));
+        Assert.Empty(summaries[0].ActiveAlarms);
+        Assert.Equal(0, summaries[0].AlarmReadFailedCount);
+    }
+
+    [Fact]
+    public async Task AlarmThatExpiresDuringRelatedSignalReadIsNotConfirmedAtEvaluation()
+    {
+        var summaries = OneStation();
+        var alarmSampleTime = DateTimeOffset.UtcNow.AddSeconds(-4);
+        await ValveAlarmDiagnosisService.AttachCoreAsync(summaries,
+            _ => Task.FromResult<IReadOnlyList<ValveAlarmDefinition>>([DefWithSignals("DB1.A.X", "OP020")]),
+            async (_, reqs) =>
+            {
+                if (reqs.Any(r => r.RequestKey.StartsWith("io::")))
+                {
+                    await Task.Delay(1300);
+                    return reqs.Select(r => Result(r, true)).ToArray();
+                }
+                return reqs.Select(r => Result(r, true) with { SourceTimestamp = alarmSampleTime }).ToArray();
+            });
+        Assert.Empty(summaries[0].ActiveAlarms);
+        Assert.Equal(1, summaries[0].AlarmReadFailedCount);
+    }
+
+    [Fact]
+    public async Task ExpiredActiveAlarmsAreRefreshedInOneBatchBeforeFinalEvaluation()
+    {
+        var summaries = OneStation();
+        var alarmBatches = new List<int>();
+        await ValveAlarmDiagnosisService.AttachCoreAsync(summaries,
+            _ => Task.FromResult<IReadOnlyList<ValveAlarmDefinition>>([
+                DefWithSignals("DB1.A.X", "OP020"), DefWithSignals("DB1.A.Y", "OP020")]),
+            async (_, reqs) =>
+            {
+                if (reqs.Any(r => r.RequestKey.StartsWith("io::")))
+                {
+                    await Task.Delay(1300);
+                    return reqs.Select(r => Result(r, true)).ToArray();
+                }
+                alarmBatches.Add(reqs.Count);
+                var sample = DateTimeOffset.UtcNow.AddSeconds(alarmBatches.Count == 1 ? -4 : 0);
+                return reqs.Select(r => Result(r, true) with { SourceTimestamp = sample }).ToArray();
+            });
+        Assert.Equal(2, summaries[0].ActiveAlarms.Count);
+        Assert.Equal(0, summaries[0].AlarmReadFailedCount);
+        Assert.Equal(new[] { 2, 2 }, alarmBatches);
+    }
+
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("stale")]
+    [InlineData("timeout")]
+    public async Task AlarmRefreshCannotReviveOldTrueAndUsesTheOriginalStageDeadline(string kind)
+    {
+        var summaries = OneStation();
+        var alarmReads = 0;
+        DateTimeOffset? alarmSampleTime = null;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        await ValveAlarmDiagnosisService.AttachCoreAsync(summaries,
+            (_, _) => Task.FromResult<IReadOnlyList<ValveAlarmDefinition>>([DefWithSignals("DB1.A.X", "OP020")]),
+            async (_, reqs, ct) =>
+            {
+                if (reqs.Any(r => r.RequestKey.StartsWith("io::")))
+                {
+                    await Task.Delay(1300, ct);
+                    return reqs.Select(r => Result(r, true)).ToArray();
+                }
+                if (++alarmReads == 1) alarmSampleTime = DateTimeOffset.UtcNow.AddSeconds(-4);
+                else if (kind == "failed") throw new InvalidOperationException("refresh failed");
+                else if (kind == "timeout") await Task.Delay(Timeout.Infinite, ct);
+                return reqs.Select(r => Result(r, true) with { SourceTimestamp = alarmSampleTime }).ToArray();
+            }, new ValveAlarmReadOptions(200, 3, TimeSpan.FromMilliseconds(1800)), default);
+        Assert.Equal(2, alarmReads);
+        Assert.Empty(summaries[0].ActiveAlarms);
+        Assert.Equal(1, summaries[0].AlarmReadFailedCount);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(4), $"Original stage budget was exceeded: {watch.Elapsed}");
+    }
 
     [Fact]
     public async Task AlarmBitsAreReadFirstAndOnlyActiveAlarmsGetTheirSignalsRead()

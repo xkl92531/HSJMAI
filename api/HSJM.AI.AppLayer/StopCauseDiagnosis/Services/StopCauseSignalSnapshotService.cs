@@ -41,7 +41,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             IPLC_IOTagService ioTagService,
             IPLC_StationShadowSignalService stationShadowSignalService,
             IPLC_VariableAccessService variableAccessService,
-            IPLC_BlockService blockService)
+            IPLC_BlockService blockService = null)
         {
             _blockService = blockService;
             _iotService = iotService;
@@ -329,7 +329,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 .Where(s => !string.IsNullOrWhiteSpace(s) && !good.Contains(s) && CrossPlcRules.BlockNameOf(s) != null)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            if (unread.Count == 0)
+            // 没有块服务（单测手工构造）时不做跨 PLC 改道，行为与改道前一致
+            if (unread.Count == 0 || _blockService == null)
             {
                 return rows;
             }

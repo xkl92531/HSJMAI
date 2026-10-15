@@ -134,7 +134,7 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
     /// <param name="diagnosticVerificationService">诊断验证服务（AI自我反思和优化）</param>
     /// <param name="strategyDecider">诊断策略决策服务</param>
     /// <param name="memoryService">诊断记忆服务（用于卡滞点和能量流分析）</param>
-    public class DiagnosticStrategyFactoryApp(
+    public partial class DiagnosticStrategyFactoryApp(
         IDiagnosticValidator diagnosticValidator,
         IStepCrossReferenceDiagnostic stepCrossRefDiagnostic,
         IPLC_LogicUnitService pLC_LogicUnitService,
@@ -150,11 +150,13 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
         DiagnosticStrategyDecider strategyDecider,
         DiagnosticMemoryService memoryService,
         ILogger<DiagnosticStrategyFactoryApp> logger = null,
-        HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeReader manualModeReader = null) : ISelfScopedAutoInject
+        HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeReader manualModeReader = null,
+        IPLC_BlockInterfaceService blockInterfaceService = null) : ISelfScopedAutoInject
     {
         /// <summary>日志（可空：测试直接构造时不注入）</summary>
         private readonly ILogger<DiagnosticStrategyFactoryApp> _logger = logger;
         private readonly HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeReader _manualModeReader = manualModeReader;
+        private readonly IPLC_BlockInterfaceService _feedbackBlockInterfaces = blockInterfaceService;
 
         internal Func<long, IReadOnlyList<HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeBinding>,
             CancellationToken, Task<HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeRead>> ManualModeReadOverride { get; set; }
@@ -656,12 +658,12 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
                     return outcome;
                 }
 
+                var manualProjects = new HashSet<long>();
                 var modeRead = ManualModeReadOverride;
                 if (modeRead is null && _manualModeReader is not null)
                     modeRead = _manualModeReader.ReadAsync;
                 if (modeRead is not null)
                 {
-                    var manualProjects = new HashSet<long>();
                     var handledModeRules = new HashSet<long>();
                     foreach (var group in rules.Where(rule => rule.ProjectId.HasValue
                         && (rule.Source is "XMLV2" or "XMLV2_TIMED" or "XMLV2_REVIEW" or "XMLV2_MODE"))
@@ -699,10 +701,11 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
                             Reason = $"IO故障，疑似手动模式触发（{string.Join("、", names)}），请检查当前操作状态。",
                             ExpectedValue = "检查手动模式下的 I/O 状态"
                         });
-                        rules = rules.Where(rule => !manualProjects.Contains(rule.ProjectId ?? 0)).ToList();
-                        if (rules.Count == 0) return outcome;
                     }
                 }
+
+                var feedbackHandled = await EvaluateFullFeedbackLogicAsync(rules, outcome, rawViolations, constraintLogEntries, cancellationToken, manualProjects);
+                rules = rules.Where(rule => !feedbackHandled.Contains(rule.Id) && !manualProjects.Contains(rule.ProjectId ?? 0)).ToList();
 
                 // XMLV2 stores every recognized rule for test comparison, but the legacy
                 // evaluator has only a single live frame. Record guarded/unproven rules as
@@ -724,7 +727,7 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
                             ConstraintOperator = deferred.Operator,
                             RelatedRule = deferred.RuleName,
                             Reason = deferred.Source == "XMLV2_TIMED"
-                                ? "已识别反馈关系，缺可信动作持续时间/旁路证据，暂不判故障"
+                                ? "完整反馈逻辑或唯一写入来源尚未获证明，缺可信动作持续时间/旁路证据，暂不判故障"
                                 : "已识别约束，但当前单帧诊断缺少执行位置或源码证明，暂不判故障"
                         }
                     });
@@ -3569,6 +3572,8 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
                 {
                     sb.AppendLine($"I点地址: {iPointText}");
                 }
+                if (string.Equals(issue.Category, "CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+                    sb.AppendLine("判定: 确认违规");
                 sb.AppendLine($"原因: {NormalizeInlineText(issue.Reason, "未提供原因")}");
                 index++;
             }

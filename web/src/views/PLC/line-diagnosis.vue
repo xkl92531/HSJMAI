@@ -13,6 +13,7 @@ import StopCauseDiagnosisAPI from '@/api/modules/PLC/stopCauseDiagnosis'
 import { InfoFilled, MagicStick, Setting } from '@element-plus/icons-vue'
 import messages from './line-diagnosis.lang'
 import { alarmKindKey, alarmLocationText, alarmSignalsText, alarmTagType, totalActiveAlarms } from './lineDiagnosisAlarms'
+import { diagnosisWarnings } from './lineDiagnosisWarnings'
 
 const { t, mergeLocaleMessage } = useI18n()
 
@@ -240,6 +241,8 @@ const deviceFocusTypeSummary = computed(() => {
 })
 const constraintReport = computed(() => diagnosisResult.value?.constraintReport || '')
 const activeAlarmTotal = computed(() => totalActiveAlarms(stationSummaries.value))
+/** 排查前提示：自动规则拿不准工站的 GRAPH 块等（后端 Warnings） */
+const preDiagnosisWarnings = computed(() => diagnosisWarnings(diagnosisResult.value))
 
 function isDeviceFocusFinding(finding: any): boolean {
   const phase = finding?.diagnosisPhase || ''
@@ -574,6 +577,21 @@ async function runDiagnosis() {
       </div>
     </div>
 
+    <el-alert
+      v-if="phase === 'done' && preDiagnosisWarnings.length"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="pre-diagnosis-warnings"
+      :title="$t('line_diagnosis.preDiagnosisWarnings', { count: preDiagnosisWarnings.length })"
+    >
+      <ul class="pre-diagnosis-warnings__list">
+        <li v-for="(text, index) in preDiagnosisWarnings" :key="index">
+          {{ text }}
+        </li>
+      </ul>
+    </el-alert>
+
     <el-dialog
       v-model="settingsDialogVisible"
       :title="$t('line_diagnosis.settingsTitle')"
@@ -744,7 +762,7 @@ async function runDiagnosis() {
     </div>
 
     <!-- AI 诊断结论 -->
-    <div v-if="llmReport?.success" class="llm-report-section">
+    <div v-if="llmReport?.success || llmReport?.evidenceOnly" class="llm-report-section">
 
       <!-- Agent 推理过程（嵌入结论区顶部） -->
       <div v-if="agentSteps.length > 0" class="agent-steps-section">
@@ -806,10 +824,10 @@ async function runDiagnosis() {
       </h3>
       <el-card shadow="hover" class="llm-card">
         <div class="llm-header">
-          <el-tag type="danger" size="large">
+          <el-tag v-if="llmReport.rootCauseStation" type="danger" size="large">
             {{ $t('line_diagnosis.rootCauseStation') }}{{ llmReport.rootCauseStation }}
           </el-tag>
-          <el-tag type="info">
+          <el-tag v-if="!llmReport.evidenceOnly" type="info">
             {{ $t('line_diagnosis.confidence') }}{{ (llmReport.confidence * 100).toFixed(0) }}%
           </el-tag>
         </div>
@@ -858,7 +876,7 @@ async function runDiagnosis() {
     </div>
 
     <!-- AI 诊断失败/无结论时显示原始输出 -->
-    <div v-else-if="llmReport && !llmReport.success && phase === 'done'" class="llm-report-section">
+    <div v-else-if="llmReport && !llmReport.success && !llmReport.evidenceOnly && phase === 'done'" class="llm-report-section">
       <h3 class="section-title">
         🔍 {{ $t('line_diagnosis.aiConclusion') }}
       </h3>
@@ -1276,6 +1294,16 @@ async function runDiagnosis() {
 .agent-meta-text {
   font-size: 13px;
   color: #606266;
+}
+
+.pre-diagnosis-warnings {
+  margin-bottom: 12px;
+}
+
+.pre-diagnosis-warnings__list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
 }
 
 .header-left {

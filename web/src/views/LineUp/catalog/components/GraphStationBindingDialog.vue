@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, ref, watch } from 'vue'
 import plcUploadApi from '@/api/modules/PLC/upload'
 import lineUpImportApi from '@/api/modules/LineUp/import'
-import { useGraphStationBinding } from '../useGraphStationBinding'
+import { registrationNotice, useGraphStationBinding } from '../useGraphStationBinding'
 import { useI18n } from 'vue-i18n'
 import messages from './lang'
 
@@ -111,6 +111,69 @@ function projectLabel(row: GraphStationBoundBlock) {
     return (project.plcCode ? project.plcCode + ' · ' : '') + project.name
 }
 
+/** 有改动时提示已排队 GRAPH 步位重新注册（后端 RegistrationMessage） */
+function showRegistrationNotice(result: { registrationMessage?: string | null } | null | undefined) {
+    const text = registrationNotice(result)
+    if (text) {
+        ElMessage.info(text)
+    }
+}
+
+function bindingTooltip(node: GraphStationBindingNode) {
+    if (node.bindingStatus === 'Manual') {
+        return t('lineupCatalog_form.bindingManualTooltip')
+    }
+    const reason = (node.reason ?? '').replace(/^自动建议[:：]/, '').trim() || '—'
+    const confidence = node.confidence == null ? '—' : Math.round(Number(node.confidence) * 100) + '%'
+    return t('lineupCatalog_form.bindingSuggestedTooltip', { reason, confidence })
+}
+
+async function acceptSuggestion(node: GraphStationBindingNode) {
+    if (!node.bindingId) {
+        return
+    }
+    try {
+        const result = await workspace.acceptSuggestions([node.bindingId])
+        ElMessage.success(t('lineupCatalog_form.acceptedCount', { count: 1 }))
+        if (result.skipped && result.skipped.length > 0) {
+            const head = result.skipped.slice(0, 3).map(item => t('lineupCatalog_form.skippedItem', { name: item.blockName, reason: item.reason })).join(t('lineupCatalog_form.listSep'))
+            ElMessage.warning(t('lineupCatalog_form.skippedDetail', { list: head }) + (result.skipped.length > 3 ? t('lineupCatalog_form.moreSuffix') : ''))
+        }
+        showRegistrationNotice(result)
+        emit('changed')
+    }
+    catch (error) {
+        ElMessage.error(friendlyError(error, t('lineupCatalog_form.acceptFailed')))
+    }
+}
+
+async function confirmReject(node: GraphStationBindingNode) {
+    if (!node.bindingId) {
+        return
+    }
+    try {
+        await ElMessageBox.confirm(
+            t('lineupCatalog_form.rejectConfirm', { name: node.blockName ?? '', code: node.stationCode ?? '' }),
+            t('lineupCatalog_form.rejectTitle'),
+            { type: 'warning', confirmButtonText: t('lineupCatalog_form.rejectSuggestionAction'), cancelButtonText: t('common.cancel') },
+        )
+    }
+    catch {
+        return
+    }
+    try {
+        const result = await workspace.rejectSuggestions([node.bindingId])
+        ElMessage.success(t('lineupCatalog_form.rejectedCount', { count: result.rejectedCount ?? result.unboundCount })
+            + ((result.restoredBlockCount ?? 0) > 0 ? t('lineupCatalog_form.stationMarkRestored', { count: result.restoredBlockCount }) : '')
+            + (result.clearedBlockCount > 0 ? t('lineupCatalog_form.stationMarkCleared', { count: result.clearedBlockCount }) : ''))
+        showRegistrationNotice(result)
+        emit('changed')
+    }
+    catch (error) {
+        ElMessage.error(friendlyError(error, t('lineupCatalog_form.rejectFailed')))
+    }
+}
+
 function onSelectionChange(rows: GraphStationBoundBlock[]) {
     workspace.setSelection(rows.map(row => String(row.blockId)))
 }
@@ -160,6 +223,7 @@ async function bindNow() {
             const head = result.skipped.slice(0, 3).map(item => t('lineupCatalog_form.skippedItem', { name: item.blockName, reason: item.reason })).join(t('lineupCatalog_form.listSep'))
             ElMessage.warning(t('lineupCatalog_form.skippedDetail', { list: head }) + (result.skipped.length > 3 ? t('lineupCatalog_form.moreSuffix') : ''))
         }
+        showRegistrationNotice(result)
         emit('changed')
     }
     catch (error) {
@@ -185,7 +249,10 @@ async function confirmUnbind(node: { blockName?: string, block?: { blockName: st
     }
     try {
         const result = await workspace.unbind([node.bindingId])
-        ElMessage.success(t('lineupCatalog_form.unboundCount', { count: result.unboundCount }) + (result.clearedBlockCount > 0 ? t('lineupCatalog_form.stationMarkCleared', { count: result.clearedBlockCount }) : ''))
+        ElMessage.success(t('lineupCatalog_form.unboundCount', { count: result.unboundCount })
+            + ((result.restoredBlockCount ?? 0) > 0 ? t('lineupCatalog_form.stationMarkRestored', { count: result.restoredBlockCount }) : '')
+            + (result.clearedBlockCount > 0 ? t('lineupCatalog_form.stationMarkCleared', { count: result.clearedBlockCount }) : ''))
+        showRegistrationNotice(result)
         emit('changed')
     }
     catch (error) {
@@ -646,12 +713,45 @@ async function runAutoPipeline() {
                                 <el-tag v-if="(data.kind === 'station' || data.kind === 'substation') && data.count" size="small" type="success" effect="light">
                                     {{ data.count }}
                                 </el-tag>
+                                <el-tooltip v-if="data.kind === 'block'" :content="bindingTooltip(data)" placement="top">
+                                    <el-tag
+                                        size="small"
+                                        :type="data.bindingStatus === 'Manual' ? 'primary' : 'warning'"
+                                        effect="light"
+                                        class="status-tag"
+                                    >
+                                        {{ data.bindingStatus === 'Manual' ? $t('lineupCatalog_form.bindingManualTag') : $t('lineupCatalog_form.bindingSuggestedTag') }}
+                                    </el-tag>
+                                </el-tooltip>
+                                <template v-if="data.kind === 'block' && data.bindingStatus === 'Suggested'">
+                                    <el-button
+                                        class="unbind-button"
+                                        type="primary"
+                                        link
+                                        size="small"
+                                        :disabled="workspace.actionLoading.value"
+                                        @click.stop="acceptSuggestion(data)"
+                                    >
+                                        {{ $t('lineupCatalog_form.acceptSuggestionAction') }}
+                                    </el-button>
+                                    <el-button
+                                        class="unbind-button"
+                                        type="danger"
+                                        link
+                                        size="small"
+                                        :disabled="workspace.actionLoading.value"
+                                        @click.stop="confirmReject(data)"
+                                    >
+                                        {{ $t('lineupCatalog_form.rejectSuggestionAction') }}
+                                    </el-button>
+                                </template>
                                 <el-button
-                                    v-if="data.kind === 'block'"
+                                    v-else-if="data.kind === 'block'"
                                     class="unbind-button"
                                     type="danger"
                                     link
                                     size="small"
+                                    :disabled="workspace.actionLoading.value"
                                     @click.stop="confirmUnbind(data)"
                                 >
                                     {{ $t('lineupCatalog_form.unbindAction') }}
@@ -960,6 +1060,14 @@ async function runAutoPipeline() {
 }
 
 .unbind-button {
+    flex: none;
+}
+
+.unbind-button + .unbind-button {
+    margin-left: 0;
+}
+
+.status-tag {
     flex: none;
 }
 

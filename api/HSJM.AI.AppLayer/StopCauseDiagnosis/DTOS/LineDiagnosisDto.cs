@@ -526,6 +526,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.DTOS
     {
         public bool Success { get; set; }
 
+        /// <summary>模型分析不可用，当前报告仅由已采集 PLC 证据生成；Success 仍为 false。</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool EvidenceOnly { get; set; }
+
         public string RootCauseStation { get; set; }
 
         public string RootCauseDescription { get; set; }

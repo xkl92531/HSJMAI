@@ -155,47 +155,38 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                         .Select(s => s.Trim())
                         .ToList();
 
-                    object resolvedValue = null;
+                    var effectiveValues = new List<object>();
                     foreach (var entry in externalEntries)
                     {
                         // 解析极性前缀
                         var isNegContact = entry.StartsWith("~");
                         var actualVarName = isNegContact ? entry.TrimStart('~') : entry;
 
-                        if (TryGetSignalValue(actualVarName, snapshotResult.ExecutionContext.CurrentValues, out var signalValue))
-                        {
-                            // 常闭触点：物理信号取反后才是形参的有效值
-                            // 例：~Debug_Test.Debug[18]=True → #IWP 注入 False（触点断开）
-                            var effectiveValue = isNegContact
-                                ? (object)(!(CoerceBoolean(signalValue) ?? false))
-                                : signalValue;
-
-                            if (resolvedValue == null)
-                            {
-                                resolvedValue = effectiveValue;
-                            }
-                            else
-                            {
-                                // 多变量 OR 合并：任一触点激活（有效值 True）则结果为 True
-                                var prev = CoerceBoolean(resolvedValue);
-                                var curr = CoerceBoolean(effectiveValue);
-                                if (curr == true) resolvedValue = effectiveValue;
-                                else if (prev != true) resolvedValue = effectiveValue;
-                            }
-                        }
+                        TryGetSignalValue(actualVarName, snapshotResult.ExecutionContext.CurrentValues, out var signalValue,
+                            snapshotResult.ExecutionContext.SignalQuality);
+                        // Unknown must survive NOT and participate in OR, rather than becoming True
+                        // through a default false or disappearing beside another false input.
+                        effectiveValues.Add(isNegContact ? (object)(!CoerceBoolean(signalValue)) : signalValue);
                     }
 
-                    if (resolvedValue != null)
+                    object resolvedValue = effectiveValues.Count == 1 ? effectiveValues[0] : null;
+                    if (effectiveValues.Count > 1)
                     {
-                        var hashName = formalName.StartsWith("#") ? formalName : "#" + formalName;
-                        snapshotResult.ExecutionContext.CurrentValues[hashName] = resolvedValue;
-                        var plainName = formalName.TrimStart('#');
-                        snapshotResult.ExecutionContext.CurrentValues[plainName] = resolvedValue;
+                        var booleans = effectiveValues.Select(CoerceBoolean).ToList();
+                        resolvedValue = booleans.Any(v => v == true) ? true
+                            : booleans.All(v => v == false) ? false : null;
+                    }
 
-                        foreach (var aliasName in astReferencedSymbols.Where(symbol => SymbolTailEquals(symbol, plainName)))
-                        {
-                            snapshotResult.ExecutionContext.CurrentValues[aliasName] = resolvedValue;
-                        }
+                    // A mapped input supersedes a failed direct read of the local formal, including
+                    // its quality. Unknown also overwrites old formal values; it must not revive them.
+                    var hashName = formalName.StartsWith("#") ? formalName : "#" + formalName;
+                    var plainName = formalName.TrimStart('#');
+                    var aliases = astReferencedSymbols.Where(symbol => SymbolTailEquals(symbol, plainName))
+                        .Concat(new[] { hashName, plainName }).Distinct(StringComparer.OrdinalIgnoreCase);
+                    foreach (var aliasName in aliases)
+                    {
+                        snapshotResult.ExecutionContext.CurrentValues[aliasName] = resolvedValue;
+                        snapshotResult.ExecutionContext.SignalQuality[aliasName] = resolvedValue == null ? "Unknown" : "Good";
                     }
                 }
             }
@@ -2344,7 +2335,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
 
         private static object ResolveTokenValue(string token, StopCauseExecutionContext context)
         {
-            if (TryGetSignalValue(token, context?.CurrentValues, out var signalValue))
+            if (TryGetSignalValue(token, context?.CurrentValues, out var signalValue, context?.SignalQuality))
             {
                 return signalValue;
             }
@@ -2354,29 +2345,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 return literal;
             }
 
-            // 信号在 PLC 中读取不到（Missing/Bad）时，默认视为 true（正常/OK）。
-            // 理由：读不到通常是变量未映射到 IoT 网关、地址偏移不对、或变量不存在于在线设备，
-            // 而非设备故障。将其标记为 Unknown 会导致整条 AST 链路无法判定，
-            // 默认为 true 可让求值继续聚焦在能读到实际异常值的节点上。
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                var normalized = NormalizeRuntimeSymbolPath(token);
-                if (!string.IsNullOrWhiteSpace(normalized)
-                    && context?.SignalQuality != null
-                    && context.SignalQuality.TryGetValue(normalized, out var quality)
-                    && string.Equals(quality, "Missing", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                // 信号质量表里找不到但 CurrentValues 也没有 → 同样视为读不到，默认 true
-                if (context?.CurrentValues != null
-                    && !context.CurrentValues.ContainsKey(normalized))
-                {
-                    return true;
-                }
-            }
-
+            // Missing is neither a satisfied condition nor a physical fault. Preserve three-valued logic.
             return null;
         }
 
@@ -2395,7 +2364,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             }
 
             // 优先：是否能从信号表读到值（token 是变量名）
-            if (TryGetSignalValue(text, context?.CurrentValues, out var signalValue))
+            if (TryGetSignalValue(text, context?.CurrentValues, out var signalValue, context?.SignalQuality))
             {
                 return signalValue;
             }
@@ -2410,7 +2379,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             return ResolveTokenValue(token, context);
         }
 
-        private static bool TryGetSignalValue(string token, IDictionary<string, object> currentValues, out object value)
+        private static bool TryGetSignalValue(string token, IDictionary<string, object> currentValues, out object value,
+            IDictionary<string, string> qualities = null)
         {
             value = null;
             if (currentValues == null || currentValues.Count == 0)
@@ -2424,15 +2394,23 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 return false;
             }
 
+            // An explicitly bad full path cannot borrow a similarly named local/FB tail value.
+            // Proven FB mappings inject the full alias and its derived quality before evaluation.
+            if (qualities != null && qualities.Any(q =>
+                string.Equals(NormalizeRuntimeSymbolPath(q.Key), normalized, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(q.Value, "Good", StringComparison.OrdinalIgnoreCase)))
+                return true;
+
             if (currentValues.TryGetValue(normalized, out value))
             {
+                value = QualityCheckedValue(value, normalized, qualities);
                 return true;
             }
 
             var matched = currentValues.FirstOrDefault(it => string.Equals(NormalizeRuntimeSymbolPath(it.Key), normalized, StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(matched.Key))
             {
-                value = matched.Value;
+                value = QualityCheckedValue(matched.Value, matched.Key, qualities);
                 return true;
             }
 
@@ -2445,20 +2423,30 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 var tail = normalized.Substring(normalized.LastIndexOf('.') + 1);
                 if (!string.IsNullOrWhiteSpace(tail))
                 {
-                    if (currentValues.TryGetValue(tail, out value)) return true;
+                    if (currentValues.TryGetValue(tail, out value)) { value = QualityCheckedValue(value, tail, qualities); return true; }
                     var hashTail = "#" + tail;
-                    if (currentValues.TryGetValue(hashTail, out value)) return true;
+                    if (currentValues.TryGetValue(hashTail, out value)) { value = QualityCheckedValue(value, hashTail, qualities); return true; }
                     var tailMatched = currentValues.FirstOrDefault(it =>
                         string.Equals(NormalizeRuntimeSymbolPath(it.Key), tail, StringComparison.OrdinalIgnoreCase));
                     if (!string.IsNullOrWhiteSpace(tailMatched.Key))
                     {
-                        value = tailMatched.Value;
+                        value = QualityCheckedValue(tailMatched.Value, tailMatched.Key, qualities);
                         return true;
                     }
                 }
             }
 
             return false;
+        }
+
+        private static object QualityCheckedValue(object value, string matchedKey, IDictionary<string, string> qualities)
+        {
+            if (qualities == null || qualities.Count == 0) return value;
+            if (qualities.TryGetValue(matchedKey, out var quality))
+                return string.Equals(quality, "Good", StringComparison.OrdinalIgnoreCase) ? value : null;
+            var normalized = NormalizeRuntimeSymbolPath(matchedKey);
+            return qualities.Any(q => string.Equals(NormalizeRuntimeSymbolPath(q.Key), normalized, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(q.Value, "Good", StringComparison.OrdinalIgnoreCase)) ? null : value;
         }
 
         internal static bool TryParseLiteral(string raw, out object literal)

@@ -74,8 +74,13 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             CancellationToken cancellationToken = default,
             string outputLanguage = "zh-CN")
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            summaries = (summaries ?? new()).Where(s => s != null).ToList();
             outputLanguage = LineDiagnosisLlmService.NormalizeOutputLanguage(outputLanguage);
             var isEnglishOutput = LineDiagnosisLlmService.IsEnglishOutput(outputLanguage);
+            if (summaries.Count == 0)
+                return LineDiagnosisLlmService.BuildEvidenceOnlyReport(summaries, constraintReport, outputLanguage);
+            string modelContent = null;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             _logger.LogInformation(
                 "[DiagAgent] 开始 Agent 诊断: ProjectId={ProjectId}, 工位数={Count}, 异常={Abnormal}",
@@ -108,7 +113,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     Tools = tools,
                     MaxIterations = maxIterations,
                     EnableReflection = true,
-                    OnStepComplete = onStep,
+                    OnStepComplete = CreatePublicProgressCallback(onStep, outputLanguage),
                     CallLimits = new ToolCallLimits
                     {
                         MaxCallsPerTool = 8,
@@ -121,6 +126,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 var result = await _reActEngine.ExecuteAsync(chatClient, config, cancellationToken);
 
                 sw.Stop();
+                cancellationToken.ThrowIfCancellationRequested();
+                modelContent = result.FinalAnswer;
+                if (!result.Success || string.IsNullOrWhiteSpace(modelContent))
+                    _logger.LogWarning("[DiagAgent] 模型不可用，原始结果仅作审计: {Response}", modelContent);
 
                 _logger.LogInformation(
                     "[DiagAgent] ReAct 完成: Success={Success}, Iterations={Iter}, FinalAnswer长度={Len}",
@@ -161,16 +170,62 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             catch (Exception ex)
             {
                 sw.Stop();
-                _logger.LogError(ex, "[DiagAgent] 失败");
-                return new LineDiagnosisLlmReport
-                {
-                    Success = false,
-                    RootCauseDescription = isEnglishOutput
-                        ? $"Agent diagnosis failed: {ex.Message}"
-                        : $"Agent 诊断失败: {ex.Message}",
-                    ExecutionTimeMs = sw.ElapsedMilliseconds,
-                };
+                cancellationToken.ThrowIfCancellationRequested();
+                _logger.LogError(ex, "[DiagAgent] 失败，原始结果仅作审计: {Response}", modelContent);
+                return LineDiagnosisLlmService.BuildEvidenceOnlyReport(summaries, constraintReport, outputLanguage, sw.ElapsedMilliseconds);
             }
+        }
+
+        internal static Func<ReActStep, Task> CreatePublicProgressCallback(
+            Func<ReActStep, Task> onStep, string outputLanguage = "zh-CN")
+        {
+            if (onStep == null) return null;
+            var language = LineDiagnosisI18n.Normalize(outputLanguage);
+            string T(string cn, string en, string tw, string ja) => language switch
+            {
+                "en-US" => en, "zh-TW" => tw, "ja-JP" => ja, _ => cn
+            };
+            return step =>
+            {
+                // The engine retains this original object in ExecutionHistory and reads Complete.Content
+                // AFTER the callback. Publish a detached projection, never mutate the engine/audit input.
+                var status = !step.Success
+                    ? T("诊断步骤执行失败，详情见服务端日志。", "Diagnosis step failed; see server logs for details.",
+                        "診斷步驟執行失敗，詳情見伺服器記錄。", "診断ステップに失敗しました。詳細はサーバーログを確認してください。")
+                    : step.Decision == ReActStepDecision.Complete
+                        ? T("分析步骤已完成，正在核验结论证据。", "Analysis step completed; diagnosis evidence is being verified.",
+                            "分析步驟已完成，正在核驗結論證據。", "分析ステップが完了しました。診断の証拠を検証しています。")
+                        : step.WasIntercepted
+                            ? T("工具调用受到执行限制，正在调整检查。", "Tool call was limited; checks are being adjusted.",
+                                "工具呼叫受到執行限制，正在調整檢查。", "ツール呼び出しが制限されました。確認手順を調整しています。")
+                            : step.Phase switch
+                            {
+                                ReActPhase.Action or ReActPhase.Observation => T("工具检查步骤已完成，结果待证据核验。",
+                                    "Tool check completed; results await evidence verification.", "工具檢查步驟已完成，結果待證據核驗。", "ツール確認が完了しました。結果の証拠を検証します。"),
+                                ReActPhase.Reflection => T("正在复核诊断证据。", "Reviewing diagnosis evidence.",
+                                    "正在複核診斷證據。", "診断の証拠を再確認しています。"),
+                                _ => T("正在分析诊断证据。", "Analyzing diagnosis evidence.",
+                                    "正在分析診斷證據。", "診断の証拠を分析しています。")
+                            };
+                return onStep(new ReActStep
+                {
+                    Phase = step.Phase, Decision = step.Decision, Iteration = step.Iteration,
+                    Timestamp = step.Timestamp, DurationMs = step.DurationMs, Success = step.Success,
+                    WasIntercepted = step.WasIntercepted, Content = status,
+                    ErrorMessage = string.IsNullOrWhiteSpace(step.ErrorMessage) ? null
+                        : T("步骤错误详情见服务端日志。", "See server logs for step error details.",
+                            "步驟錯誤詳情見伺服器記錄。", "ステップのエラー詳細はサーバーログを確認してください。"),
+                    InterceptReason = string.IsNullOrWhiteSpace(step.InterceptReason) ? null
+                        : T("执行限制，详情见服务端日志。", "Execution limited; see server logs.",
+                            "執行限制，詳情見伺服器記錄。", "実行が制限されました。サーバーログを確認してください。"),
+                    ToolCall = step.ToolCall == null ? null : new ReActToolCall
+                    {
+                        ToolName = step.ToolCall.ToolName, CallId = step.ToolCall.CallId,
+                        // Arguments and tool outputs can contain model-written fault prose too.
+                        Arguments = null
+                    }
+                });
+            };
         }
 
         #region Prompt 构建
@@ -190,16 +245,16 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
 
 English JSON style example:
 {
-  ""rootCauseStation"": ""OP030"",
-  ""rootCauseDescription"": ""AI diagnosis confirms a real fault at OP030: cylinder CYL08 extended-position feedback OP030_CYL08_W did not turn TRUE after the output command. Check the sensor, wiring, IO module and cylinder mechanism."",
-  ""confidence"": 0.85,
-  ""impactChain"": ""Root cause: OP030 -> Impacted: [OP010,OP020,OP040,OP050]"",
+  ""rootCauseStation"": null,
+  ""rootCauseDescription"": ""Insufficient independent fault evidence. A command with unmet feedback is a condition to investigate; it does not by itself confirm a fault or communication loss."",
+  ""confidence"": 0,
+  ""impactChain"": ""Causal relationships between stations are unconfirmed."",
   ""stationAnalysis"": [
-    { ""stationCode"": ""OP030"", ""role"": ""RootCause"", ""summary"": ""Cylinder CYL08 did not reach the extended position; this is the strongest local physical evidence."" },
-    { ""stationCode"": ""OP040"", ""role"": ""Impacted"", ""summary"": ""Stopped because it is waiting for OP030 to recover."" }
+    { ""stationCode"": ""OP030"", ""role"": ""Unknown"", ""summary"": ""Feedback condition is unmet; root cause is unconfirmed."" }
   ],
-  ""suggestedActions"": [""Inspect OP030 CYL08 sensor, wiring and IO module.""],
-  ""reasoning"": ""Prioritized direct actuator feedback conflicts over process handshake waiting signals, then used cross-station waiting evidence to determine the impact range.""
+  ""secondaryCauses"": [],
+  ""suggestedActions"": [""Verify current PLC alarms, commands and complete feedback conditions with read quality and timestamps.""],
+  ""reasoning"": ""Only a Good active PLC alarm or a confirmed constraint violation supports a fault candidate. A latched alarm does not establish current mechanical damage.""
 }
 "
                 : normalizedLang == LineDiagnosisI18n.ZhCn
@@ -263,13 +318,16 @@ English JSON style example:
 
 - 不要猜测，每个结论都要有工具查询的证据支撑
 - FALSE 的信号不一定是故障，可能是正常等待（按需工位、等待上游物料）
-- 注意区分 InternalFault（内部故障）和 WaitingFor（等待其它工位）——WaitingFor 只说明该工位在等别人，不代表一定是""上游""故障
+- InternalFault 仅为归属标签，不证明故障；WaitingFor 只说明工位在等待，不证明另一工位发生故障。
+- False、Unknown、GRAPH execbits 活动位及 FailurePathSummary 都不能独立证明故障。仅使用 Good 且激活的 PLC 报警或标有“判定: 确认违规”的 IO 规则作为故障候选；报警可能锁存，不等于机械部件已损坏。
+- 缺少独立证据时 rootCauseStation 必须为 null。rootCauseDescription、reasoning、stationAnalysis、secondaryCauses、suggestedActions 都不得重新引入未经证实的故障或通信中断断言。
+- 只有实际为 False 的 WaitingFor 边直接或多跳到独立故障候选，才能将沿链的纯等待工位标为 Impacted；多候选时 rootCauseStation=null，仍保留每个候选的已证明等待链，同一等待站通向多个候选必须明确无法唯一归属。Unknown、循环、跨项目同名歧义或自身独立故障不得简单标为连带，禁止按工位编号猜传播。
 - 变化最近的信号更可能是故障触发点
 - GRAPH 块中 Transition 未满足表示该步骤在等待条件，需查看条件叶子
-- 流程/握手类状态信号（Reach/Pick/Drop/完成/允许/就绪/同步等）为 False 时，不要直接当根因；先看它是否有明确 L1/L2 近端追踪、明确报警、通信中断或物理反馈矛盾。
-- 若结构化证据画像显示某工位有直接执行机构卡滞（气缸/阀/电机输出与到位反馈矛盾，或 GRAPH 转换卡在物理反馈叶子），而另一工位主要是流程状态未满足，要优先解释二者近端追踪和证据强弱，再判定根因。
-- IO 约束检测命中的互斥/蕴含/全满足异常通常是真实故障候选；如果约束报告包含 I点地址（%Ixx.x），最终 rootCauseDescription、stationAnalysis.summary、suggestedActions 必须输出对应信号名和地址。
-- IO 约束报告只是内部证据来源。最终面向用户的 rootCauseDescription、impactChain、stationAnalysis、secondaryCauses、suggestedActions 中不要使用“IO约束诊断确认”“约束诊断服务确认”“IO约束故障”等内部来源表述。若该证据支持故障结论，请写成“AI诊断确认存在故障”，再描述具体信号、I点地址和物理故障现象。
+- Reach/Pick/Drop/完成/允许/就绪/同步等状态为 False，及 L1/L2 近端追踪、物理反馈等待都只帮助定位待核实条件，不独立支持根因。
+- GRAPH 转换等待物理反馈不能直接叫作执行机构卡滞。仅在独立报警/确认违规存在时列候选，并区分当前状态、锁存报警和待确认根因。
+- IO 条目必须标有“判定: 确认违规”才能作为候选；保留已读取的信号名及地址，无法判定/未采到不能作为故障点。
+- IO 约束报告只是内部证据来源。最终面向用户的 rootCauseDescription、impactChain、stationAnalysis、secondaryCauses、suggestedActions 中不要使用“IO约束诊断确认”“约束诊断服务确认”“IO约束故障”等内部来源表述。只描述已确认信号和报警/违规事实，明确根因待确认，不写“AI诊断确认存在故障”或推断机械损坏。
 
 ## 迭代预算管理
 
@@ -315,8 +373,7 @@ English JSON style example:
             {
                 sb.AppendLine("## IO 约束证据报告（内部参考）");
                 sb.AppendLine("以下约束结果来自实时 IO 约束检测。若包含 I点地址，请在最终结论中明确输出信号名和地址。");
-                sb.AppendLine("约束违反说明该工位确有异常，但不等于它是停机源头：先按工位间等待关系确定阻塞源头工位，等待其它工位的工位上的约束违反按连带结果处理。");
-                sb.AppendLine("注意：不要把“IO约束诊断确认”作为最终结论开头；面向用户请统一写成“AI诊断确认存在故障”，再说明具体信号、点位和故障现象。");
+                sb.AppendLine("仅标有‘判定: 确认违规’的条目支持独立故障候选。保留具体信号和值，注明报警可能锁存；未采到的信号不能补成 true/false，也不能直接推断机械损坏。");
                 sb.AppendLine(constraintReport);
                 sb.AppendLine();
             }
@@ -362,7 +419,8 @@ English JSON style example:
                         {
                             var ownership = !string.IsNullOrEmpty(f.FaultOwnership)
                                 ? $"[{f.FaultOwnership}]" : "";
-                            sb.AppendLine($"  - {f.VariableName} = {(f.EvaluatedValue == false ? "FALSE" : "TRUE")} {ownership}");
+                            var value = f.EvaluatedValue switch { true => "TRUE", false => "FALSE", _ => "UNKNOWN" };
+                            sb.AppendLine($"  - {f.VariableName} = {value} {ownership}");
                             if (!string.IsNullOrEmpty(f.FailurePathSummary))
                                 sb.AppendLine($"    路径: {Truncate(f.FailurePathSummary, 120)}");
                         }
@@ -384,8 +442,8 @@ English JSON style example:
 
             sb.AppendLine();
             sb.AppendLine(isEnglishOutput
-                ? "Use the tools to investigate abnormal stations and identify the root cause. Pay special attention to signals marked with FaultOwnership=InternalFault."
-                : "请使用工具深入调查异常工位，找到根因。尤其关注 FaultOwnership 标记为 InternalFault 的信号。");
+                ? "Prioritize independently verified active PLC alarms and confirmed constraint violations. Other findings describe conditions to investigate. Trace only explicit FALSE WaitingFor edges to the selected fault station; InternalFault alone is not fault evidence."
+                : "优先核查独立的激活 PLC 报警和确认违规，其余发现仅作为待核实条件。只沿实际为 False 的 WaitingFor 边追踪到故障工位；InternalFault 标签本身不证明故障。");
 
             return sb.ToString();
         }

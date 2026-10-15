@@ -1,5 +1,5 @@
 import type { LineUpGraphCatalogLookup } from '@/api/modules/LineUp/catalog'
-import type { GraphStationBindResult, GraphStationBoundBlock, GraphStationMonitorBinding, GraphStationUnbindResult } from '@/api/modules/PLC/graphStationBinding'
+import type { GraphStationBindingItem, GraphStationBindResult, GraphStationBoundBlock, GraphStationMonitorBinding, GraphStationUnbindResult } from '@/api/modules/PLC/graphStationBinding'
 import { computed, ref } from 'vue'
 import graphStationBindingApi from '@/api/modules/PLC/graphStationBinding'
 import lineUpGraphCatalogApi from '@/api/modules/LineUp/catalog'
@@ -94,6 +94,25 @@ export interface GraphStationProjectOption {
     plcDeviceName: string | null
 }
 
+export type GraphStationBindingStatus = 'Manual' | 'Suggested'
+
+/** 后端 reason 里「手动绑定」的固定文案（与 StationBlockBindingRules.ManualReason 一致） */
+const manualReason = '手动绑定'
+
+/** 绑定状态：优先用后端 status；旧后端没有该字段时按 reason 认，只有「手动绑定」算人工 */
+export function bindingStatusOf(binding: Pick<GraphStationBindingItem, 'reason'> & { status?: string | null }): GraphStationBindingStatus {
+    const status = (binding.status ?? '').trim()
+    if (status === 'Manual' || status === 'Suggested') {
+        return status
+    }
+    return (binding.reason ?? '').trim() === manualReason ? 'Manual' : 'Suggested'
+}
+
+/** 绑定 / 解绑 / 确认 / 拒绝结果里的 GRAPH 步位重新注册说明（无则空串） */
+export function registrationNotice(result: { registrationMessage?: string | null } | null | undefined): string {
+    return (result?.registrationMessage ?? '').trim()
+}
+
 export type GraphStationBindingNodeKind = 'line' | 'process' | 'station' | 'substation' | 'block' | 'placeholder'
 
 /** 左侧导航树节点：产线 → 工序 → 工站 → 子工站（含 PLC 设备），已绑定 GRAPH 块挂为子工站叶子（可解绑） */
@@ -120,6 +139,12 @@ export interface GraphStationBindingNode {
     bindingId?: string
     /** block 节点：GRAPH 块名 */
     blockName?: string
+    /** block 节点：手动绑定 / 自动建议 */
+    bindingStatus?: GraphStationBindingStatus
+    /** block 节点：绑定原因（自动建议的依据） */
+    reason?: string | null
+    /** block 节点：置信度（手动绑定为 1） */
+    confidence?: number | null
     /** 节点下已绑定块数（station/substation 徽标） */
     count?: number
     children: GraphStationBindingNode[]
@@ -140,6 +165,10 @@ export interface GraphStationBindingGateway {
     getBlocks: () => Promise<GraphStationBoundBlock[]>
     bind: (request: { stationCode: string, blockIds: string[] }) => Promise<GraphStationBindResult>
     unbind: (request: { bindingIds: string[] }) => Promise<GraphStationUnbindResult>
+    /** 确认自动建议（转为手动绑定） */
+    acceptSuggestions: (request: { bindingIds: string[] }) => Promise<GraphStationBindResult>
+    /** 拒绝自动建议（以后不再建议到该工站） */
+    rejectSuggestions: (request: { bindingIds: string[] }) => Promise<GraphStationUnbindResult>
     rerunRegistration: (projectId: string) => Promise<unknown>
     /** 监控目录查询（按 line+device+station 定位子工站下的结构绑定行） */
     listMonitorBindings: (query: { lineId?: string, deviceId?: string, stationId?: string }) => Promise<GraphStationMonitorBinding[]>
@@ -168,6 +197,8 @@ const defaultGateway: GraphStationBindingGateway = {
     getBlocks: () => graphStationBindingApi.getBlocks(),
     bind: request => graphStationBindingApi.bind(request),
     unbind: request => graphStationBindingApi.unbind(request),
+    acceptSuggestions: request => graphStationBindingApi.acceptSuggestions(request),
+    rejectSuggestions: request => graphStationBindingApi.rejectSuggestions(request),
     rerunRegistration: projectId => projectApiRerunRegistration(projectId),
     listMonitorBindings: query => graphStationBindingApi.listMonitorBindings(query),
     enableMonitoring: async (bindingId) => {
@@ -201,6 +232,14 @@ type SubStationLookup = LineUpGraphCatalogLookup['subStations'][number]
 
 /** 工站基础资料行（Basic_WorkStation） */
 type StationLookup = LineUpGraphCatalogLookup['stations'][number]
+
+function bindingLeafInfo(binding: GraphStationBindingItem) {
+    return {
+        bindingStatus: bindingStatusOf(binding),
+        reason: binding.reason ?? null,
+        confidence: binding.confidence ?? null,
+    }
+}
 
 function optionLabel(code: string | null | undefined, name: string | null | undefined) {
     return ((code || '') + ' ' + (name || '')).trim()
@@ -427,6 +466,7 @@ export function useGraphStationBinding(gateway: GraphStationBindingGateway = def
                     label: block.blockName,
                     blockName: block.blockName,
                     bindingId: String(binding.bindingId),
+                    ...bindingLeafInfo(binding),
                     plcCode: plcName || undefined,
                     projectId: project?.id,
                     lineId: String(station.lineId),
@@ -461,6 +501,7 @@ export function useGraphStationBinding(gateway: GraphStationBindingGateway = def
                     label: block.blockName,
                     blockName: block.blockName,
                     bindingId: String(binding.bindingId),
+                    ...bindingLeafInfo(binding),
                     lineId: String(station.lineId),
                     stationId,
                     stationCode,
@@ -665,6 +706,38 @@ export function useGraphStationBinding(gateway: GraphStationBindingGateway = def
         }
     }
 
+    /** 确认自动建议（转为手动绑定），确认后刷新 */
+    async function acceptSuggestions(bindingIds: string[]): Promise<GraphStationBindResult> {
+        if (bindingIds.length === 0) {
+            throw new Error('BindingTargetMissing')
+        }
+        actionLoading.value = true
+        try {
+            const result = await gateway.acceptSuggestions({ bindingIds })
+            await loadBlocks()
+            return result
+        }
+        finally {
+            actionLoading.value = false
+        }
+    }
+
+    /** 拒绝自动建议：块回到右侧未绑定区，以后提取不再建议到该工站 */
+    async function rejectSuggestions(bindingIds: string[]): Promise<GraphStationUnbindResult> {
+        if (bindingIds.length === 0) {
+            throw new Error('BindingTargetMissing')
+        }
+        actionLoading.value = true
+        try {
+            const result = await gateway.rejectSuggestions({ bindingIds })
+            await loadBlocks()
+            return result
+        }
+        finally {
+            actionLoading.value = false
+        }
+    }
+
     /** 按当前范围项目重跑 GRAPH 步位注册（绑定关系变更后立即生效） */
     async function rerunRegistration(): Promise<unknown> {
         const projectId = scope.value.projectId || focusProjectId.value
@@ -717,6 +790,8 @@ export function useGraphStationBinding(gateway: GraphStationBindingGateway = def
         setSelection,
         bindSelected,
         unbind,
+        acceptSuggestions,
+        rejectSuggestions,
         rerunRegistration,
         loadBlocks,
     }

@@ -141,12 +141,19 @@ namespace HSJM.AI.DbService
             }
 
             var rows = transport.Envelope.BackResult ?? new List<DcsTagQualityItem>();
+            var rowsByAlias = rows.Where(r => !string.IsNullOrWhiteSpace(r?.Key))
+                .GroupBy(r => r.Key!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Take(2).ToArray(), StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < batch.Count; i++)
             {
                 var alias = batch[i];
-                var row = i < rows.Count && SameAlias(rows[i]?.Key, alias)
-                    ? rows[i]
-                    : rows.FirstOrDefault(r => SameAlias(r?.Key, alias));
+                var matches = rowsByAlias.GetValueOrDefault(alias, []);
+                if (matches.Length > 1)
+                {
+                    result[alias] = IgwAliasReading.Bad(PLC_SignalReadStatus.DeviceError, "IGW 返回该点的重复读数");
+                    continue;
+                }
+                var row = matches.SingleOrDefault();
                 if (row is null)
                 {
                     result[alias] = IgwAliasReading.Bad(PLC_SignalReadStatus.Missing, "IGW 未返回该点");

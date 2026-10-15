@@ -6763,6 +6763,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
             var operationCancellationToken = linkedCts.Token;
             ConcurrentBag<StationDiagnosisSummaryDto> summaries = null;
+            var observedByStation = new ConcurrentDictionary<(long ProjectId, int StationOrder), StationDiagnosisSummaryDto>();
 
             try
             {
@@ -6922,7 +6923,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                             pair.StationCode,
                             index + 1,
                             maxAnchors,
-                            request.EnablePerStationLlm,
+                            false, // Per-station model analysis uses the observation recheck, not the initial transient frame.
                             request.GraphOnlyMode,
                             request.MaxFbPenetrationDepth,
                             activeGraphGraceSeconds,
@@ -7029,6 +7030,17 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                     }
                 }
 
+                // A movement-history check alone cannot refresh the False conditions passed to the model.
+                // Re-evaluate the original suspects after the shared window, using a fresh read scope and bounded parallelism.
+                await LineDiagnosisObservationRecheck.RefreshAsync(suspectSummaries, maxParallel,
+                    (station, ct) => DiagnoseStationForLineAsync(station.ProjectId, station.StationCode,
+                        station.StationOrder, maxAnchors, request.EnablePerStationLlm, request.GraphOnlyMode,
+                        request.MaxFbPenetrationDepth, activeGraphGraceSeconds, request.EnableDeviceFocusCheck,
+                        request.DeviceFocusAnchorTypes, request.OutputLanguage, ct, postDiagnosisRecheck: false),
+                    operationCancellationToken,
+                    current => observedByStation[(current.ProjectId, current.StationOrder)] = current);
+                summaries = new ConcurrentBag<StationDiagnosisSummaryDto>(summaries
+                    .Select(s => observedByStation.GetValueOrDefault((s.ProjectId, s.StationOrder), s)));
                 var orderedSummaries = summaries
                     .OrderBy(s => s.StationOrder)
                     .ToList();
@@ -7167,10 +7179,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 var hasConstraintReport = !string.IsNullOrWhiteSpace(result.ConstraintReport);
                 var llmConstraintContext = Original353OperatingModeSummary.ForModel(result.ConstraintReport, operatingModes);
-                if (request.UseLlmAnalysis
-                    && (result.AbnormalStations > 0
-                        || request.ForceLlmSummaryWhenNoAbnormal
-                        || hasConstraintReport))
+                if (ShouldRunLineSummary(request, result))
                 {
                     if (hasSignalR) await _broadcastService.BroadcastLineDiagnosisLlmStartAsync(taskId);
                     await businessProgress.EmitAsync(new LineDiagnosisProgressEventDto
@@ -7296,11 +7305,11 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 // 尽量收集已完成的工位摘要
                 if (result.StationSummaries == null || result.StationSummaries.Count == 0)
                 {
-                    var partialSummaries = summaries?.ToList();
+                    var partialSummaries = summaries?.Select(s => observedByStation.GetValueOrDefault((s.ProjectId, s.StationOrder), s)).ToList();
                     if (partialSummaries != null && partialSummaries.Count > 0)
                     {
                         result.StationSummaries = partialSummaries.OrderBy(s => s.StationOrder).ToList();
-                        result.DiagnosedStations = partialSummaries.Count;
+                        result.DiagnosedStations = partialSummaries.Count(s => s.OverallStatus != "Pending");
                         result.AbnormalStations = partialSummaries.Count(s => s.OverallStatus == "SomeFalse");
                     }
                 }
@@ -9753,21 +9762,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
         /// </summary>
         private static void CollectFalseLeafNames(StopCauseAstTraceNode node, List<string> result)
         {
-            if (node == null) return;
-            var isFalse = string.Equals(node.Status, "False", StringComparison.OrdinalIgnoreCase);
-            var hasChildren = node.Children != null && node.Children.Count > 0;
-
-            if (isFalse && !hasChildren && !string.IsNullOrWhiteSpace(node.VariableName))
-            {
-                result.Add(node.VariableName);
-                return;
-            }
-
-            if (hasChildren)
-            {
-                foreach (var child in node.Children)
-                    CollectFalseLeafNames(child, result);
-            }
+            result.AddRange(GetBlockingFalseLeaves(node).Select(leaf => leaf.VariableName));
         }
 
         /// <summary>
@@ -9836,14 +9831,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
 
             visitedVariables ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // 从完整求值树中递归收集所有 False 状态的叶子变量
-            // GraphTransition 内部是转移条件子树，Not/Reset 节点内的 False 叶子同样是真实故障，
-            // 不能被 CollectFalseLeaves 的守卫逻辑提前截断。
-            var falseLeaves = new List<StopCauseAstTraceNode>();
-            if (string.Equals(rootEvaluation.NodeType, StopCauseAstNodeType.GraphTransition, StringComparison.OrdinalIgnoreCase))
-                CollectFalseLeavesUnguarded(rootEvaluation, falseLeaves);
-            else
-                CollectFalseLeaves(rootEvaluation, falseLeaves);
+            // 只追溯使当前条件不成立的正极性 False。已满足的 NOT/OR 分支不是等待关系。
+            var falseLeaves = GetBlockingFalseLeaves(rootEvaluation).ToList();
 
             // 按变量名去重，并过滤 STRING 类型叶子（STRING 值不参与根因追踪）
             falseLeaves = falseLeaves
@@ -11090,54 +11079,60 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             return null;
         }
 
-        private static void CollectFalseLeaves(StopCauseAstTraceNode node, List<StopCauseAstTraceNode> result)
+        internal static bool ShouldRunLineSummary(LineDiagnosisRequestDto request, LineDiagnosisResultDto result) =>
+            request.UseLlmAnalysis && (result.AbnormalStations > 0 || request.ForceLlmSummaryWhenNoAbnormal
+                || !string.IsNullOrWhiteSpace(result.ConstraintReport)
+                || result.StationSummaries?.Any(s => s?.ActiveAlarms?.Any(LineDiagnosisLlmService.IsNativeFault) == true) == true);
+
+        internal static IReadOnlyList<StopCauseAstTraceNode> GetBlockingFalseLeaves(StopCauseAstTraceNode root)
         {
-            if (node == null) return;
+            var result = new List<StopCauseAstTraceNode>();
+            CollectFalseLeaves(root, result);
+            return result;
+        }
 
+        private static void CollectFalseLeaves(StopCauseAstTraceNode node, List<StopCauseAstTraceNode> result)
+            => CollectBlockingFalseLeaves(node, result, expected: true, depth: 0);
+
+        private static void CollectBlockingFalseLeaves(StopCauseAstTraceNode node,
+            List<StopCauseAstTraceNode> result, bool expected, int depth)
+        {
+            if (node == null || depth > 128) return;
             var isFalse = string.Equals(node.Status, "False", StringComparison.OrdinalIgnoreCase);
+            var isTrue = string.Equals(node.Status, "True", StringComparison.OrdinalIgnoreCase);
+            // Unknown, satisfied and internally inconsistent branches cannot justify a blocking edge.
+            if ((!isFalse && !isTrue) || isTrue == expected || node.Result.HasValue && node.Result.Value != isTrue) return;
             var hasChildren = node.Children != null && node.Children.Count > 0;
-
-            if (isFalse && !hasChildren && !string.IsNullOrWhiteSpace(node.VariableName))
+            if (!hasChildren)
             {
-                // 叶子False节点——这才是真正导致失败的信号
-                result.Add(node);
+                if (expected && isFalse && StopCauseAstRuntimeEvaluationService.CoerceBoolean(node.ActualValue) != true
+                    && !string.IsNullOrWhiteSpace(node.VariableName))
+                    result.Add(node);
                 return;
             }
-
-            if (hasChildren)
+            if (string.Equals(node.NodeType, StopCauseAstNodeType.Not, StringComparison.OrdinalIgnoreCase))
             {
-                // Not（negated-contact）节点的子节点为 False，表示 NOT 条件满足（NOT False = True），
-                // 这是正常状态，不是故障原因。不递归进 Not 节点的子节点，避免误报互锁信号。
-                // 例：NOT IHP（缩回到位传感器）在伸出网络里 IHP=False 是正常的，不应报告为 InternalFault。
-                if (string.Equals(node.NodeType, StopCauseAstNodeType.Not, StringComparison.OrdinalIgnoreCase))
-                    return;
-
-                // Reset（R 线圈）节点的子节点 False 表示"复位条件未触发"，
-                // 即输出没有被主动复位——这是正常状态，不是导致输出为 False 的根因。
-                // 例：[IHP] → R(FwdPos)，IHP=False 表示"不在缩回位"，与伸出方向无关。
-                if (string.Equals(node.NodeType, StopCauseAstNodeType.Reset, StringComparison.OrdinalIgnoreCase))
-                    return;
-
-                // SetResetFlipFlop（SR/RS 指令）：Children[0]=S 分支（置位条件），Children[1]=R 分支（复位条件）。
-                // 只收集 S 分支的 False 叶子（置位条件不满足 = 故障）；
-                // R 分支的 False 叶子（复位条件不触发 = 正常，不是故障）直接跳过。
-                if (string.Equals(node.NodeType, StopCauseAstNodeType.SetResetFlipFlop, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (node.Children.Count > 0)
-                        CollectFalseLeaves(node.Children[0], result); // 只递归 S 分支
-                    return;
-                }
-
-                foreach (var child in node.Children)
-                {
-                    CollectFalseLeaves(child, result);
-                }
+                if (node.Children.Count == 1) CollectBlockingFalseLeaves(node.Children[0], result, !expected, depth + 1);
+                return;
             }
+            if (string.Equals(node.NodeType, StopCauseAstNodeType.Reset, StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(node.NodeType, StopCauseAstNodeType.SetResetFlipFlop, StringComparison.OrdinalIgnoreCase))
+            {
+                // A reset/latch cannot be explained by a false set input alone.
+                if (expected && node.Children.Count >= 2 && node.Children[1].Status == "False")
+                    CollectBlockingFalseLeaves(node.Children[0], result, true, depth + 1);
+                return;
+            }
+            if (!expected && node.NodeType is not (StopCauseAstNodeType.And or StopCauseAstNodeType.Or
+                or StopCauseAstNodeType.GraphTransition or StopCauseAstNodeType.Anchor)) return;
+            foreach (var child in node.Children)
+                CollectBlockingFalseLeaves(child, result, expected, depth + 1);
         }
 
         private static void CollectFbTrueBlockingLeaves(StopCauseAstTraceNode node, List<StopCauseAstTraceNode> result)
         {
             if (node == null) return;
+            if (!string.Equals(node.Status, "False", StringComparison.OrdinalIgnoreCase)) return;
 
             if (IsDisabledAlwaysTrueGuard(node))
                 return;
@@ -11734,28 +11729,6 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
         private static bool IsSyntheticAlwaysTrue(string variableName)
         {
             return string.Equals(variableName?.Trim(), "AlwaysTRUE", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// 无守卫版 False 叶子收集：不跳过 Not / Reset / SetResetFlipFlop 节点。
-        /// 专用于 GRAPH 转移条件子树——转移条件中所有 False 叶子均为真实故障，
-        /// 不存在"NOT 节点内部 False 是正常状态"的语义。
-        /// </summary>
-        private static void CollectFalseLeavesUnguarded(StopCauseAstTraceNode node, List<StopCauseAstTraceNode> result)
-        {
-            if (node == null) return;
-            var isFalse = string.Equals(node.Status, "False", StringComparison.OrdinalIgnoreCase);
-            var hasChildren = node.Children != null && node.Children.Count > 0;
-            if (isFalse && !hasChildren && !string.IsNullOrWhiteSpace(node.VariableName))
-            {
-                result.Add(node);
-                return;
-            }
-            if (hasChildren)
-            {
-                foreach (var child in node.Children)
-                    CollectFalseLeavesUnguarded(child, result);
-            }
         }
 
         /// <summary>
