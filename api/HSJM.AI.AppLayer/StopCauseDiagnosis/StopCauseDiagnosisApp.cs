@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using HSJM.AI.AppLayer.DiagnosticStrategyFactory;
 using HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353;
+using HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding;
 using HSJM.AI.AppLayer.DiagnosticStrategyFactory.DTOS;
 using HSJM.AI.AppLayer.DiagnosisProgress;
 using HSJM.AI.AppLayer.Hubs;
@@ -29,6 +30,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
     {
         private readonly StationExtractionService _stationExtractionService;
         private readonly StationPlcScopeService _stationPlcScopeService;
+        private readonly IPLC_StationBlockBindingService _stationBlockBindingService;
         private readonly ValveAlarmDiagnosisService _valveAlarmDiagnosisService;
         private readonly StationBackfillService _stationBackfillService;
         private readonly QPointAnchorDiscoveryService _anchorDiscoveryService;
@@ -135,8 +137,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             DeviceHealthSemanticClassifierService deviceHealthSemanticClassifierService,
             StationPlcScopeService stationPlcScopeService,
             FbLocalVariableConcretizer fbLocalVariableConcretizer,
-            ValveAlarmDiagnosisService valveAlarmDiagnosisService)
+            ValveAlarmDiagnosisService valveAlarmDiagnosisService,
+            IPLC_StationBlockBindingService stationBlockBindingService)
         {
+            _stationBlockBindingService = stationBlockBindingService;
             _stationPlcScopeService = stationPlcScopeService;
             _fbLocalVariableConcretizer = fbLocalVariableConcretizer;
             _valveAlarmDiagnosisService = valveAlarmDiagnosisService;
@@ -3283,6 +3287,36 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 blockIds.Add(block.Id);
             }
 
+            // FB→实例DB 关系取自 db 解析的权威绑定表（ai_plc_dbfbinding，源自博图 InstanceDB XML 的 InstanceOfName，
+            // 上传解析时随 DB 块写入），与 GraphStepTagRegistrationJob 注册台账同源。
+            // 不做 FB→DB 命名推断：同 FB 多实例（如 FB6405_AxisCombo → DB115/116/.../716_AxisCombo 共 8 个实例）
+            // 或异名实例 DB 场景下命名推断会错；绑定表无记录则跳过该块（宁缺毋错，需重传含 InstanceDB 的导出）。
+            var graphDbBindings = await _dbFbBindingService.GetListAsync(binding =>
+                binding.IsDeleted == false
+                && binding.ProjectId == projectId
+                && !string.IsNullOrWhiteSpace(binding.InstanceOfName)
+                && !string.IsNullOrWhiteSpace(binding.DbName));
+            var allowedStations = await _stationPlcScopeService.GetAllowedStationsAsync(projectId);
+
+            // 2026-10-14：实例 DB 名写着本工位的（如 DB310_OP030_Graph），即使其模板 FB 的工位是别的工位，也算本工位
+            var fbNamesOwnedByInstanceName = graphDbBindings
+                .Where(binding => StationBlockBindingRules.IsSameStation(
+                    StationBlockBindingRules.ResolveInstanceStation(binding.DbName, null, allowedStations), stationCode))
+                .Select(binding => binding.InstanceOfName!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (fbNamesOwnedByInstanceName.Count > 0)
+            {
+                var ownedFbBlocks = await _blockService.GetListAsync(block =>
+                    block.IsDeleted == false
+                    && block.ProjectId == projectId
+                    && fbNamesOwnedByInstanceName.Contains(block.BlockName));
+                foreach (var block in ownedFbBlocks.Where(block => block?.Id > 0))
+                {
+                    blockIds.Add(block.Id);
+                }
+            }
+
             if (blockIds.Count == 0)
                 return sortOrder;
 
@@ -3307,15 +3341,6 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             if (stepUnits.Count == 0)
                 return sortOrder;
 
-            // FB→实例DB 关系取自 db 解析的权威绑定表（ai_plc_dbfbinding，源自博图 InstanceDB XML 的 InstanceOfName，
-            // 上传解析时随 DB 块写入），与 GraphStepTagRegistrationJob 注册台账同源。
-            // 不做 FB→DB 命名推断：同 FB 多实例（如 FB6405_AxisCombo → DB115/116/.../716_AxisCombo 共 8 个实例）
-            // 或异名实例 DB 场景下命名推断会错；绑定表无记录则跳过该块（宁缺毋错，需重传含 InstanceDB 的导出）。
-            var graphDbBindings = await _dbFbBindingService.GetListAsync(binding =>
-                binding.IsDeleted == false
-                && binding.ProjectId == projectId
-                && !string.IsNullOrWhiteSpace(binding.InstanceOfName)
-                && !string.IsNullOrWhiteSpace(binding.DbName));
             var dbNamesByFbName = graphDbBindings
                 .GroupBy(binding => binding.InstanceOfName!.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(
@@ -3351,6 +3376,28 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                         "StopCauseDiagnosis/SeedSignals");
                     continue;
                 }
+
+                // 2026-10-14：同一模板 FB 的多个实例 DB 按各自名字归工位，只播属于本工位的实例；
+                // 名字里没有工位号的沿用 FB 的工位，FB 也没有工位时保持原样（都播）
+                var ownInstanceDbNames = instanceDbNames
+                    .Where(dbName =>
+                    {
+                        var owner = StationBlockBindingRules.ResolveInstanceStation(dbName, block.StationCode, allowedStations);
+                        return owner == null || StationBlockBindingRules.IsSameStation(owner, stationCode);
+                    })
+                    .ToList();
+                if (ownInstanceDbNames.Count < instanceDbNames.Count)
+                {
+                    await WriteLogHelper.WriteLogsAsync(
+                        $"[SeedMonitoringSignals] {stationCode} GRAPH EXEC_BITS 按实例归属跳过：Block={block.BlockName} " +
+                        $"跳过=[{string.Join(",", instanceDbNames.Except(ownInstanceDbNames, StringComparer.OrdinalIgnoreCase))}]",
+                        "StopCauseDiagnosis/SeedSignals");
+                }
+                if (ownInstanceDbNames.Count == 0)
+                {
+                    continue;
+                }
+                instanceDbNames = ownInstanceDbNames;
 
                 // 位下标严格用「步号-1」（与 GraphStepTagRegistrationJob 注册台账 EXEC_BITS[n-1] 一致），
                 // 缺号/跳号不会移位；同一 DB 内重复步号按首次出现去重（existingVarNames 兜底）。
@@ -6630,6 +6677,40 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 cancellationToken);
         }
 
+        /// <summary>
+        /// 排查前的工站绑定覆盖提示：范围内工位有哪些 GRAPH 块还没人工确认工站，以及哪些 GRAPH 块没有任何工站
+        /// （规则见 StationBlockBindingRules.BuildCoverageWarnings）。
+        /// </summary>
+        private async Task<List<string>> BuildBindingCoverageWarningsAsync(List<long> projectIds, IEnumerable<string> stationCodes)
+        {
+            if (projectIds == null || projectIds.Count == 0)
+                return new List<string>();
+
+            var graphBlocks = await _blockService.GetListAsync(block =>
+                block.IsDeleted == false
+                && block.ProgrammingLanguage == "GRAPH"
+                && block.ProjectId != null
+                && projectIds.Contains(block.ProjectId.Value));
+            if (graphBlocks.Count == 0)
+                return new List<string>();
+
+            var bindings = await _stationBlockBindingService.GetListAsync(binding =>
+                binding.IsDeleted == false
+                && binding.ProjectId != null
+                && projectIds.Contains(binding.ProjectId.Value));
+
+            var scope = new HashSet<string>(
+                (stationCodes ?? Enumerable.Empty<string>()).Where(code => !string.IsNullOrWhiteSpace(code)).Select(code => code.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+
+            return StationBlockBindingRules.BuildCoverageWarnings(
+                graphBlocks
+                    .Where(block => block.ProjectId.HasValue && !string.IsNullOrWhiteSpace(block.BlockName))
+                    .Select(block => new GraphBlockRef(block.Id, block.ProjectId!.Value, block.BlockName, block.StationCode)),
+                bindings,
+                scope);
+        }
+
         private async Task<HttpResponseResultModel<LineDiagnosisResultDto>> DiagnoseLineStoppageCoreAsync(
             LineDiagnosisRequestDto request,
             string taskId = null,
@@ -6771,6 +6852,22 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 }
 
                 result.TotalStations = stationProjectPairs.Count;
+
+                // 2026-10-14 排查前提示：本次范围内的工位还有 GRAPH 块未人工确认工站、或有 GRAPH 块没有工站归属时，
+                // 写进 Warnings 随结果返回（只提示，不影响排查）
+                try
+                {
+                    result.Warnings.AddRange(await BuildBindingCoverageWarningsAsync(
+                        projectIds,
+                        stationProjectPairs.Select(p => p.StationCode)));
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception coverageEx)
+                {
+                    await WriteLogHelper.WriteLogsAsync(
+                        $"[诊断] 工站绑定覆盖检查失败（不影响排查）: {coverageEx.Message}",
+                        "LineDiagnosis/BindingCoverage");
+                }
 
                 // 推送：告知前端工位列表（用于渲染占位）
                 if (hasSignalR)
@@ -9814,10 +9911,15 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             foreach (var (leaf, traceVariable) in terminalLeaves)
             {
                 if (summary.KeyFindings.Count >= maxAnchors * 2) break;
+                // 2026-10-14 跨 PLC：本工程找不到写入源的，可能是对端 PLC 工程里的通信块（如 DB182_PLC1<->PLC2），
+                // 到块所在工程找写入它的工位——找到了就记为「在等那个工位」，不再当成本工位的根因终点
+                var (isCrossPlc, crossPlcWriterStation) = await ResolveCrossPlcWriterAsync(projectId, traceVariable);
                 await WriteLogHelper.WriteLogsAsync(
-                    $"[DeepTrace] depth={depth} PhaseB 终端信号: {traceVariable}={leaf.ActualValue} (无写入源) → 输出为根因终点",
+                    $"[DeepTrace] depth={depth} PhaseB 终端信号: {traceVariable}={leaf.ActualValue} (无写入源) → " +
+                    (isCrossPlc ? $"跨PLC信号，对端写入工位={crossPlcWriterStation ?? "未知"}" : "输出为根因终点"),
                     "LineDiagnosis/DeepTrace");
-                await EmitTerminalFinding(projectId, stationCode, leaf, traceVariable, depth, diagnosisPhase, summary);
+                await EmitTerminalFinding(projectId, stationCode, leaf, traceVariable, depth, diagnosisPhase, summary,
+                    isCrossPlc, crossPlcWriterStation);
             }
 
             // ── Phase C: 预加载所有写入源 AST（批量 DB 查询） ──
@@ -10126,16 +10228,84 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
         /// <summary>
         /// 终端变量处理（无写入源）：分类、IOTag 反查、语义标签、输出 Finding。
         /// </summary>
+        /// <summary>
+        /// 跨 PLC 终端信号：变量所在块不在本工程、只在另一个工程里时，返回 (true, 对端写入工位)；
+        /// 对端工程里找不到写入源或写入工位说不清时工位为 null。规则见 CrossPlcRules。
+        /// </summary>
+        private async Task<(bool IsCrossPlc, string WriterStation)> ResolveCrossPlcWriterAsync(long projectId, string traceVariable)
+        {
+            try
+            {
+                var blockName = CrossPlcRules.BlockNameOf(traceVariable);
+                if (blockName == null)
+                    return (false, null);
+
+                var blockProjects = (await _blockService.GetListAsync(block =>
+                        block.IsDeleted == false
+                        && block.ProjectId != null
+                        && block.BlockName == blockName))
+                    .Select(block => block.ProjectId!.Value)
+                    .Distinct()
+                    .ToList();
+                var owners = new Dictionary<string, IReadOnlyCollection<long>>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [blockName] = blockProjects
+                };
+                var ownerProjectId = CrossPlcRules.ResolveOwnerProject(traceVariable, projectId, owners);
+                if (ownerProjectId == null)
+                    return (false, null);
+
+                var writeAccesses = await _variableAccessService.GetListAsync(it =>
+                    it.IsDeleted == false
+                    && it.ProjectId == ownerProjectId.Value
+                    && it.VariableName == traceVariable
+                    && (it.AccessType == "WRITE" || it.AccessType == "READWRITE")
+                    && it.LogicUnitId.HasValue);
+                var writerUnitIds = writeAccesses
+                    .Select(it => it.LogicUnitId!.Value)
+                    .Distinct()
+                    .ToList();
+                if (writerUnitIds.Count == 0)
+                    return (true, null);
+
+                var writerAstRows = await _logicUnitAstService.GetListAsync(it =>
+                    it.IsDeleted == false
+                    && it.ProjectId == ownerProjectId.Value
+                    && it.LogicUnitId.HasValue
+                    && writerUnitIds.Contains(it.LogicUnitId.Value));
+                return (true, CrossPlcRules.PickWriterStation(writerAstRows.Select(row => row.StationCode)));
+            }
+            catch (Exception ex)
+            {
+                await WriteLogHelper.WriteLogsAsync(
+                    $"[DeepTrace] 跨PLC写入工位查找失败（按普通终端信号处理）: {traceVariable} {ex.Message}",
+                    "LineDiagnosis/DeepTrace");
+                return (false, null);
+            }
+        }
+
         private async Task EmitTerminalFinding(
             long projectId, string stationCode,
             StopCauseAstTraceNode leaf, string traceVariable,
             int depth, string diagnosisPhase,
-            StationDiagnosisSummaryDto summary)
+            StationDiagnosisSummaryDto summary,
+            bool isCrossPlc = false,
+            string crossPlcWriterStation = null)
         {
             var (ioTagComment, semanticLabel, terminalCategory, ioTagAddress) =
                 await LookupIoTagInfoAsync(projectId, stationCode, traceVariable);
 
             var displaySuffix = BuildIoTagDisplaySuffix(semanticLabel, ioTagComment);
+            if (isCrossPlc)
+            {
+                terminalCategory = "跨PLC信号";
+            }
+            var failurePathSummary = isCrossPlc
+                ? $"🔗 跨 PLC 信号：{traceVariable}{displaySuffix}，当前值={leaf.ActualValue}，" +
+                  (string.IsNullOrWhiteSpace(crossPlcWriterStation)
+                      ? "由对端 PLC 写入（未找到写入工位）"
+                      : $"由对端 PLC 的 {crossPlcWriterStation} 写入，本工位在等它")
+                : $"🔍 根因终点（{terminalCategory}）：{traceVariable}{displaySuffix}，当前值={leaf.ActualValue}";
 
             summary.KeyFindings.Add(new StationAnchorFinding
             {
@@ -10144,9 +10314,9 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
                 EvaluationStatus = leaf.Status,
                 EvaluatedValue = leaf.Result,
                 BlockName = null,
-                FailurePathSummary = $"🔍 根因终点（{terminalCategory}）：{traceVariable}{displaySuffix}，当前值={leaf.ActualValue}",
+                FailurePathSummary = failurePathSummary,
                 TraceDepth = depth,
-                FaultOwnership = "ExternalInput",
+                FaultOwnership = CrossPlcRules.TerminalOwnership(isCrossPlc, crossPlcWriterStation),
                 DiagnosisPhase = diagnosisPhase,
                 IoTagAddress = ioTagAddress,
                 IoTagComment = ioTagComment,
@@ -12270,10 +12440,13 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
             List<PLC_StationShadowSignalEntity> allShadowSignals,
             bool allowHistoryFallback = true)
         {
+            // 2026-10-14：实例 DB 名明确写着别的工位（如 OP010 下挂了 DB310_OP030_Graph 的步位）的不算本工位——
+            // 同一 GRAPH 模板 FB 的全部实例以前会被播进 FB 所在工位，读到别的工位卡住的步会把故障记到本工位
             var execBitSignals = allShadowSignals?
                 .Where(signal => IsGraphExecBitSignal(signal)
                     && signal.DiagnosisExcluded != true
-                    && !string.IsNullOrWhiteSpace(signal.VariableName))
+                    && !string.IsNullOrWhiteSpace(signal.VariableName)
+                    && StationBlockBindingRules.ExecBitBelongsToStation(signal.VariableName, stationCode, null))
                 .ToList() ?? new List<PLC_StationShadowSignalEntity>();
 
             if (execBitSignals.Count == 0)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding;
 using HSJM.AI.AppLayer.StopCauseDiagnosis.DTOS;
 using HSJM.AI.AppLayer.StopCauseDiagnosis.Models;
 using HSJM.AI.Core;
@@ -20,13 +21,19 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         private readonly StationMapPersistenceService _stationMapPersistenceService;
         private readonly IPLC_VariableAccessService _variableAccessService;
         private readonly ILogger<StationBackfillService> _logger;
+        private readonly IPLC_StationBlockBindingService _stationBlockBindingService;
+        private readonly StationPlcScopeService _stationPlcScopeService;
 
         public StationBackfillService(
             IPLC_BlockService blockService,
             StationMapPersistenceService stationMapPersistenceService,
             IPLC_VariableAccessService variableAccessService,
-            ILogger<StationBackfillService> logger)
+            ILogger<StationBackfillService> logger,
+            IPLC_StationBlockBindingService stationBlockBindingService,
+            StationPlcScopeService stationPlcScopeService)
         {
+            _stationBlockBindingService = stationBlockBindingService;
+            _stationPlcScopeService = stationPlcScopeService;
             _blockService = blockService;
             _stationMapPersistenceService = stationMapPersistenceService;
             _variableAccessService = variableAccessService;
@@ -62,19 +69,24 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             if (updateBlockStationCode)
             {
                 summary.UpdatedBlockCount = await ApplyBlockStationCodesAsync(projectId, extractionResult.StationColoringResult);
-                summary.UpdatedBlockCount += await ApplyBlockTextFallbackAsync(projectId);
                 summary.UpdatedBlockStationCode = summary.UpdatedBlockCount > 0;
             }
 
             return summary;
         }
 
+        /// <summary>
+        /// 回填块工位字段（2026-10-14 改为一次遍历）：
+        /// 有手动绑定的块一律以手动绑定为准——以前重新提取会按染色投票直接覆盖，把人工绑好的工位改乱；
+        /// 否则按染色投票，块名/描述里明确的工位号优先；只有文本线索时只填空字段；白名单外的工位不写。
+        /// 规则见 StationBlockBindingRules.DecideBackfillStation。
+        /// </summary>
         private async Task<int> ApplyBlockStationCodesAsync(long projectId, IReadOnlyCollection<LogicUnitStationLabel> labels)
         {
-            var blockWinners = labels
+            var coloringWinners = (labels ?? Array.Empty<LogicUnitStationLabel>())
                 .Where(it => it.BlockId.HasValue && !string.IsNullOrWhiteSpace(it.StationCode))
                 .GroupBy(it => it.BlockId.Value)
-                .Select(group =>
+                .ToDictionary(group => group.Key, group =>
                 {
                     var ordered = group
                         .GroupBy(it => it.StationCode, StringComparer.OrdinalIgnoreCase)
@@ -88,52 +100,33 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
 
                     var winner = ordered.FirstOrDefault();
                     var hasConflict = ordered.Count > 1 && ordered[1].Score >= Math.Max(0.30m, winner?.Score - 0.15m ?? 0m);
-                    return new
-                    {
-                        BlockId = group.Key,
-                        StationCode = hasConflict ? string.Empty : winner?.StationCode ?? string.Empty
-                    };
-                })
-                .Where(it => !string.IsNullOrWhiteSpace(it.StationCode))
-                .ToList();
+                    return hasConflict ? null : winner?.StationCode;
+                });
 
-            if (blockWinners.Count == 0)
+            var blocks = await _blockService.GetListAsync(it => it.ProjectId == projectId && it.IsDeleted == false);
+            if (blocks.Count == 0)
             {
                 return 0;
             }
 
-            var blockIds = blockWinners.Select(it => it.BlockId).Distinct().ToList();
-            var blockMap = (await _blockService.GetListAsync(it =>
-                    it.ProjectId == projectId &&
-                    it.IsDeleted == false &&
-                    blockIds.Contains(it.Id)))
-                .ToDictionary(it => it.Id, it => it);
+            var manualStationByName = await LoadManualStationByBlockNameAsync(projectId);
+            var allowed = await _stationPlcScopeService.GetAllowedStationsAsync(projectId);
 
             var updatedCount = 0;
-            foreach (var winner in blockWinners)
+            foreach (var block in blocks)
             {
-                if (!blockMap.TryGetValue(winner.BlockId, out var block))
+                coloringWinners.TryGetValue(block.Id, out var coloringWinner);
+                manualStationByName.TryGetValue((block.BlockName ?? string.Empty).Trim(), out var manualStation);
+                var textStation = TryInferStationFromBlockText(block, out var inferred) ? inferred : null;
+
+                var decided = StationBlockBindingRules.DecideBackfillStation(
+                    block.StationCode, coloringWinner, textStation, manualStation, allowed);
+                if (decided == null)
                 {
                     continue;
                 }
 
-                if (string.Equals(block.StationCode, winner.StationCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                // 交叉验证：如果块的 Description/BlockName 中能明确提取出工位码，
-                // 且与投票结果不一致，优先信任文本中的工位码。
-                // 典型场景：GRAPH FB 块（如 FB360_MainGraph）的 Description 包含
-                // "OP030" 但其 logicunit 染色投票可能误判为 OP070。
-                var effectiveStationCode = winner.StationCode;
-                if (TryInferStationFromBlockText(block, out var textStation)
-                    && !string.Equals(textStation, winner.StationCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    effectiveStationCode = textStation;
-                }
-
-                block.StationCode = effectiveStationCode;
+                block.StationCode = decided;
                 if (await _blockService.UpdateAsync(block))
                 {
                     updatedCount++;
@@ -143,34 +136,19 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             return updatedCount;
         }
 
-        private async Task<int> ApplyBlockTextFallbackAsync(long projectId)
+        /// <summary>项目内各块名的手动绑定工站（同名多条取最近一条）</summary>
+        private async Task<Dictionary<string, string>> LoadManualStationByBlockNameAsync(long projectId)
         {
-            var blocks = await _blockService.GetListAsync(it =>
-                it.ProjectId == projectId &&
-                it.IsDeleted == false &&
-                string.IsNullOrEmpty(it.StationCode));
-
-            if (blocks.Count == 0)
-            {
-                return 0;
-            }
-
-            var updatedCount = 0;
-            foreach (var block in blocks)
-            {
-                if (!TryInferStationFromBlockText(block, out var inferredStationCode))
-                {
-                    continue;
-                }
-
-                block.StationCode = inferredStationCode;
-                if (await _blockService.UpdateAsync(block))
-                {
-                    updatedCount++;
-                }
-            }
-
-            return updatedCount;
+            const string manualReason = StationBlockBindingRules.ManualReason;
+            var manualRows = await _stationBlockBindingService.GetListAsync(it =>
+                it.ProjectId == projectId && it.IsDeleted == false && it.Reason == manualReason);
+            return manualRows
+                .Where(it => !string.IsNullOrWhiteSpace(it.BlockName) && !string.IsNullOrWhiteSpace(it.StationCode))
+                .GroupBy(it => it.BlockName.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(it => it.ModifyTime ?? it.CreateTime ?? DateTime.MinValue).First().StationCode.Trim(),
+                    StringComparer.OrdinalIgnoreCase);
         }
 
         private static bool TryInferStationFromBlockText(PLC_BlockEntity block, out string stationCode)
@@ -246,6 +224,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             }
 
             var unassignedBlockIds = unassignedBlocks.Select(b => b.Id).ToList();
+            var allowedForVoting = await _stationPlcScopeService.GetAllowedStationsAsync(projectId);
 
             // 一次性查出这些块的所有写入变量访问
             var writeAccesses = await _variableAccessService.GetListAsync(it =>
@@ -323,7 +302,14 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     continue;
                 }
 
-                block.StationCode = winner.Key;
+                // 2026-10-14：白名单外的工位不写，并统一成白名单里的写法
+                var votedStation = StationBlockBindingRules.Canonicalize(winner.Key, allowedForVoting);
+                if (votedStation == null)
+                {
+                    continue;
+                }
+
+                block.StationCode = votedStation;
                 if (await _blockService.UpdateAsync(block))
                 {
                     updatedCount++;

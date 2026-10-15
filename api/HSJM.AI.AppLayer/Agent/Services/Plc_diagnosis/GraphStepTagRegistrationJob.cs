@@ -1,5 +1,6 @@
 using Hangfire;
 using Hangfire.States;
+using HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding;
 using HSJM.AI.AppLayer.PLC.PLC_Upload.Igw;
 using HSJM.AI.AppLayer.StopCauseDiagnosis.Services;
 using HSJM.AI.Core;
@@ -709,7 +710,16 @@ namespace HSJM.AI.AppLayer.Agent.Services.Plc_diagnosis
 
                 var bindings = await _db.Queryable<PLC_StationBlockBindingEntity>()
                     .Where(b => b.ProjectId == projectId && b.IsDeleted == false && fbNames.Contains(b.BlockName))
-                    .Select(b => new { b.BlockName, b.StationCode, b.EvidenceJson })
+                    .Select(b => new PLC_StationBlockBindingEntity
+                    {
+                        BlockName = b.BlockName,
+                        StationCode = b.StationCode,
+                        EvidenceJson = b.EvidenceJson,
+                        Reason = b.Reason,
+                        Confidence = b.Confidence,
+                        CreateTime = b.CreateTime,
+                        ModifyTime = b.ModifyTime
+                    })
                     .ToListAsync()
                     .ConfigureAwait(false);
 
@@ -723,9 +733,26 @@ namespace HSJM.AI.AppLayer.Agent.Services.Plc_diagnosis
                         .ToList();
                 }
 
-                var stationCodes = bindings
-                    .Select(b => b.StationCode?.Trim())
-                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                // 2026-10-14：有手动绑定的 FB 只看手动行，否则看自动建议；已拒绝的建议不用
+                bindings = bindings
+                    .GroupBy(b => (b.BlockName ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase)
+                    .SelectMany(g => StationBlockBindingRules.SelectEffective(g))
+                    .ToList();
+
+                // 先按 FB 投票取工位，再按实例 DB 名修正：同一 GRAPH 模板 FB 的多个实例 DB 各归各的工位，
+                // 避免整组实例都记到 FB 的工位上（实例名里没有工位号时沿用 FB 的工位）
+                var resolvedByTarget = new Dictionary<GraphStepTarget, string>();
+                foreach (var t in targets)
+                {
+                    var fbStation = VoteFbStation(bindings, t.FbName);
+                    var station = StationBlockBindingRules.ResolveInstanceStation(t.DbName, fbStation, allowedStations);
+                    if (!string.IsNullOrWhiteSpace(station))
+                    {
+                        resolvedByTarget[t] = station;
+                    }
+                }
+
+                var stationCodes = resolvedByTarget.Values
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
                 if (stationCodes.Count == 0) return;
@@ -750,19 +777,7 @@ WHERE isdeleted = false AND stationcode IN ({inList})";
 
                 foreach (var t in targets)
                 {
-                    // 多工站共享块（isshared）按证据锚点数投票取主导工位（2026-08-26）：
-                    // evidencejson 数组内 "anchorKey" 出现次数 = 该站绑定证据强度；
-                    // 平票时按工位代码字典序稳定取值，保证幂等重跑分组一致
-                    var code = bindings
-                        .Where(b => string.Equals(b.BlockName, t.FbName, StringComparison.OrdinalIgnoreCase)
-                                    && !string.IsNullOrWhiteSpace(b.StationCode))
-                        .GroupBy(b => b.StationCode.Trim(), StringComparer.OrdinalIgnoreCase)
-                        .Select(g => new { Station = g.Key, Score = g.Sum(x => ScoreStationEvidence(g.Key, x.EvidenceJson)) })
-                        .OrderByDescending(x => x.Score)
-                        .ThenBy(x => x.Station, StringComparer.OrdinalIgnoreCase)
-                        .Select(x => x.Station)
-                        .FirstOrDefault();
-                    if (string.IsNullOrWhiteSpace(code)) continue;
+                    if (!resolvedByTarget.TryGetValue(t, out var code)) continue;
                     t.StationCode = code;
                     if (stationMap.TryGetValue(code, out var stationName))
                     {
@@ -774,6 +789,23 @@ WHERE isdeleted = false AND stationcode IN ({inList})";
             {
                 _logger.LogWarning("[GRAPH步位注册] 项目 {ProjectId} 工站/工位解析失败（不阻塞注册）: {Error}", projectId, ex.Message);
             }
+        }
+
+        /// <summary>
+        /// FB 层工位：多工站共享块（isshared）按证据锚点数投票取主导工位（2026-08-26）；
+        /// evidencejson 数组内 "anchorKey" 出现次数 = 该站绑定证据强度；平票时按工位代码字典序稳定取值，保证幂等重跑分组一致。
+        /// </summary>
+        private static string VoteFbStation(IEnumerable<PLC_StationBlockBindingEntity> bindings, string fbName)
+        {
+            return bindings
+                .Where(b => string.Equals(b.BlockName?.Trim(), fbName?.Trim(), StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrWhiteSpace(b.StationCode))
+                .GroupBy(b => b.StationCode.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new { Station = g.Key, Score = g.Sum(x => ScoreStationEvidence(g.Key, x.EvidenceJson)) })
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Station, StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.Station)
+                .FirstOrDefault();
         }
 
         /// <summary>

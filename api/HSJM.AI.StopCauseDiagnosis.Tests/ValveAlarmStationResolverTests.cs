@@ -26,10 +26,30 @@ public class ValveAlarmStationResolverTests
     }
 
     [Fact]
-    public void FallsBackToBlockBindingThenBlockStationCode()
+    public void FallsBackToBlockStationCodeThenSuggestedBlockBinding()
     {
-        Assert.Equal("OP030", Resolve([], [Blk(null, "fb220_op20manual", "OP030")], "OP040"));
+        // 2026-10-14：没有 reason 的旧块绑定算自动建议，排在块工位字段之后（手动绑定 → 块工位 → 自动建议）
+        Assert.Equal("OP040", Resolve([], [Blk(null, "fb220_op20manual", "OP030")], "OP040"));
+        Assert.Equal("OP030", Resolve([], [Blk(null, "fb220_op20manual", "OP030")]));
         Assert.Equal("OP040", Resolve([], [], "OP040"));
+    }
+
+    [Fact]
+    public void ManualBlockBindingWinsOverLogicUnitAndBlockStation()
+    {
+        var manual = Blk(20, "FB220_OP20Manual", "OP021");
+        manual.Reason = "手动绑定";
+
+        Assert.Equal("OP021", Resolve([Lu(10, "OP020")], [manual], "OP040"));
+    }
+
+    [Fact]
+    public void RejectedBlockBindingIsNeverUsed()
+    {
+        var rejected = Blk(20, "FB220_OP20Manual", "OP030");
+        rejected.Reason = "已拒绝";
+
+        Assert.Null(Resolve([], [rejected]));
     }
 
     [Fact]

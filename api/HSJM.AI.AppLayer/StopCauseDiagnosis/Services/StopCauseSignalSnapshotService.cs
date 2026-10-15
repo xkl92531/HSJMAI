@@ -24,12 +24,15 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         private static readonly ConcurrentDictionary<long, (List<PLC_IOTagEntity> Tags, DateTime ExpiresAt)> _ioTagsCache = new();
         private const int ProjectCacheTtlSeconds = 300;
         private const int IoTagsCacheTtlSeconds = 300;
+        private static readonly ConcurrentDictionary<string, (IReadOnlyCollection<long> Projects, DateTime ExpiresAt)> _blockOwnersCache = new(StringComparer.OrdinalIgnoreCase);
+        private const int BlockOwnersCacheTtlSeconds = 300;
         private readonly IIotService _iotService;
         private readonly IPLC_ProjectService _projectService;
         private readonly IPLC_StationAnchorBindingService _stationAnchorBindingService;
         private readonly IPLC_IOTagService _ioTagService;
         private readonly IPLC_StationShadowSignalService _stationShadowSignalService;
         private readonly IPLC_VariableAccessService _variableAccessService;
+        private readonly IPLC_BlockService _blockService;
 
         public StopCauseSignalSnapshotService(
             IIotService iotService,
@@ -37,8 +40,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             IPLC_StationAnchorBindingService stationAnchorBindingService,
             IPLC_IOTagService ioTagService,
             IPLC_StationShadowSignalService stationShadowSignalService,
-            IPLC_VariableAccessService variableAccessService)
+            IPLC_VariableAccessService variableAccessService,
+            IPLC_BlockService blockService)
         {
+            _blockService = blockService;
             _iotService = iotService;
             _projectService = projectService;
             _stationAnchorBindingService = stationAnchorBindingService;
@@ -94,7 +99,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                         ? request.AnchorTypeMap
                         : await BuildAnchorTypeMapAsync(request.ProjectId, request.StationCode, symbols);
 
-                    return await ReadWithFallbackAsync(
+                    var rows = await ReadWithFallbackAsync(
                         project.IotUrl,
                         primaryDevice,
                         fallbackDevice,
@@ -103,6 +108,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                         symbols,
                         ioTagMap,
                         anchorTypeMap);
+                    return await RerouteCrossPlcAsync(request.ProjectId, symbols, rows);
                 }
 
                 // 2026-09-23 停机诊断内同一批点只读一次（作用域由诊断入口开启，作用域外行为不变）
@@ -302,6 +308,113 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 .GroupBy(it => it.TagName, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.OrderByDescending(it => it.IsGood).First())
                 .ToList();
+        }
+
+        /// <summary>
+        /// 跨 PLC 改道读（2026-10-14）：本工程读不到、块又只在另一个工程里的符号（如 PLC1 引用的
+        /// DB182_PLC1&lt;-&gt;PLC2），改到块所在工程精确读一次，读到的好值替换原来的坏行。规则见 CrossPlcRules。
+        /// </summary>
+        private async Task<List<PLC_ReadTagResult>> RerouteCrossPlcAsync(
+            long projectId,
+            IReadOnlyList<string> symbols,
+            List<PLC_ReadTagResult> rows)
+        {
+            rows ??= new List<PLC_ReadTagResult>();
+            var good = rows
+                .Where(r => r != null && r.IsGood && !string.IsNullOrWhiteSpace(r.TagName))
+                .Select(r => r.TagName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var unread = (symbols ?? Array.Empty<string>())
+                .Select(NormalizeSymbolPath)
+                .Where(s => !string.IsNullOrWhiteSpace(s) && !good.Contains(s) && CrossPlcRules.BlockNameOf(s) != null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (unread.Count == 0)
+            {
+                return rows;
+            }
+
+            try
+            {
+                var owners = await LoadBlockOwnersAsync(unread.Select(CrossPlcRules.BlockNameOf).Where(n => n != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+                var plan = CrossPlcRules.PlanReroute(unread, projectId, owners);
+                foreach (var (ownerProjectId, ownerSymbols) in plan)
+                {
+                    var requests = ownerSymbols
+                        .Select(s => new PLC_ExactReadRequest(s, CrossPlcRules.BlockNameOf(s), CrossPlcRules.MemberPathOf(s)))
+                        .Where(r => !string.IsNullOrWhiteSpace(r.BlockName) && !string.IsNullOrWhiteSpace(r.VariablePath))
+                        .ToList();
+                    if (requests.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var exact = await _variableAccessService.ReadExactDataAsync(ownerProjectId, requests, CancellationToken.None);
+                    var rerouted = exact.Where(item => item.Quality == PLC_ExactReadQuality.Good).ToList();
+                    foreach (var item in rerouted)
+                    {
+                        rows.RemoveAll(r => string.Equals(r?.TagName, item.RequestKey, StringComparison.OrdinalIgnoreCase));
+                        rows.Add(new PLC_ReadTagResult
+                        {
+                            TagName = item.RequestKey,
+                            Value = item.Value,
+                            IsGood = true,
+                        });
+                    }
+
+                    if (rerouted.Count > 0)
+                    {
+                        WriteLogHelper.WriteLogsAsync(
+                            $"[跨PLC读取] 项目{projectId} 读不到的 {requests.Count} 个对端块符号改由项目{ownerProjectId}读取，成功 {rerouted.Count} 个",
+                            "读取信号计时");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 改道读失败不影响本工程已读到的值，读不到的照旧按未知处理
+                WriteLogHelper.WriteLogsAsync($"[跨PLC读取] 项目{projectId} 改道读取失败: {ex.Message}", "读取信号计时");
+            }
+
+            return rows;
+        }
+
+        /// <summary>块名 → 含有该块的工程（未删除），5 分钟缓存（工位影子巡检每轮都会走到这里）</summary>
+        private async Task<IReadOnlyDictionary<string, IReadOnlyCollection<long>>> LoadBlockOwnersAsync(IReadOnlyList<string> blockNames)
+        {
+            var result = new Dictionary<string, IReadOnlyCollection<long>>(StringComparer.OrdinalIgnoreCase);
+            var missing = new List<string>();
+            foreach (var name in blockNames)
+            {
+                if (_blockOwnersCache.TryGetValue(name, out var cached) && DateTime.Now < cached.ExpiresAt)
+                {
+                    result[name] = cached.Projects;
+                }
+                else
+                {
+                    missing.Add(name);
+                }
+            }
+
+            if (missing.Count > 0)
+            {
+                var rows = await _blockService.GetListAsync(block =>
+                    block.IsDeleted == false
+                    && block.ProjectId != null
+                    && missing.Contains(block.BlockName));
+                foreach (var name in missing)
+                {
+                    var projects = rows
+                        .Where(block => string.Equals(block.BlockName?.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                        .Select(block => block.ProjectId!.Value)
+                        .Distinct()
+                        .ToList();
+                    _blockOwnersCache[name] = (projects, DateTime.Now.AddSeconds(BlockOwnersCacheTtlSeconds));
+                    result[name] = projects;
+                }
+            }
+
+            return result;
         }
 
         internal static List<PLC_ExactReadRequest> BuildIgwExactReadRequests(

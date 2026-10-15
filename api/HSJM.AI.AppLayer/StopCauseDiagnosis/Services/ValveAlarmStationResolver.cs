@@ -2,11 +2,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding;
 using HSJM.AI.IDbService;
 
 namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
 {
-    /// <summary>阀门报警的工位归属：逻辑单元绑定 → 块绑定 → 块自身工位，均须在本 PLC 工位白名单内。</summary>
+    /// <summary>
+    /// 阀门报警的工位归属：手动块绑定 → 逻辑单元绑定 → 块自身工位 → 自动建议的块绑定，均须在本 PLC 工位白名单内。
+    /// 2026-10-14：块绑定拆成「手动」与「自动建议」两档（StationBlockBindingRules），已拒绝的建议不用。
+    /// </summary>
     public static class ValveAlarmStationResolver
     {
         public static string? Resolve(
@@ -18,14 +22,20 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             string? blockStationCode,
             HashSet<string>? allowed)
         {
-            return Pick(luBindings
+            var blockRows = blockBindings
+                .Where(b => (blockId.HasValue && b.BlockId == blockId)
+                            || string.Equals(b.BlockName?.Trim(), blockName?.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            IEnumerable<(string? Code, decimal? Confidence)> BlockRowsOf(StationBindingStatus status) => blockRows
+                .Where(b => StationBlockBindingRules.Classify(b.Reason) == status)
+                .Select(b => (b.StationCode, b.Confidence));
+
+            return Pick(BlockRowsOf(StationBindingStatus.Manual), allowed)
+                   ?? Pick(luBindings
                        .Where(b => b.LogicUnitId == logicUnitId)
                        .Select(b => (b.StationCode, b.Confidence)), allowed)
-                   ?? Pick(blockBindings
-                       .Where(b => (blockId.HasValue && b.BlockId == blockId)
-                                   || string.Equals(b.BlockName?.Trim(), blockName?.Trim(), StringComparison.OrdinalIgnoreCase))
-                       .Select(b => (b.StationCode, b.Confidence)), allowed)
-                   ?? Pick(new[] { (blockStationCode, (decimal?)null) }, allowed);
+                   ?? Pick(new[] { (blockStationCode, (decimal?)null) }, allowed)
+                   ?? Pick(BlockRowsOf(StationBindingStatus.Suggested), allowed);
         }
 
         private static string? Pick(IEnumerable<(string? Code, decimal? Confidence)> rows, HashSet<string>? allowed)

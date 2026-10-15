@@ -59,7 +59,33 @@ namespace HSJM.AI.Controllers
         }
 
         /// <summary>
-        /// 解绑：按绑定行 Id 软删除，块完全解绑后回到未绑定区
+        /// 接受自动建议：把选中的建议行转成手动绑定
+        /// </summary>
+        [Route("AcceptSuggestions")]
+        [DisplayName("接受GRAPH块工站自动建议")]
+        [ProducesResponseType(typeof(HttpResponseResultModel<PLC_GraphStationBindingBindResultDTO>), 200)]
+        [HttpPost]
+        public async Task<ActionResult> AcceptSuggestionsAsync([FromBody] PLC_GraphStationBindingUnbindRequestDTO request)
+        {
+            var result = await _app.AcceptSuggestionsAsync(request).ConfigureAwait(false);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// 拒绝自动建议：以后提取不再把同一块建议到同一工站
+        /// </summary>
+        [Route("RejectSuggestions")]
+        [DisplayName("拒绝GRAPH块工站自动建议")]
+        [ProducesResponseType(typeof(HttpResponseResultModel<PLC_GraphStationBindingUnbindResultDTO>), 200)]
+        [HttpPost]
+        public async Task<ActionResult> RejectSuggestionsAsync([FromBody] PLC_GraphStationBindingUnbindRequestDTO request)
+        {
+            var result = await _app.RejectSuggestionsAsync(request).ConfigureAwait(false);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// 解绑：手动绑定软删除、自动建议改记为已拒绝；块工位回退到剩余绑定或染色结果，都没有才回到未绑定区
         /// </summary>
         [Route("Unbind")]
         [DisplayName("解绑GRAPH块工站绑定")]

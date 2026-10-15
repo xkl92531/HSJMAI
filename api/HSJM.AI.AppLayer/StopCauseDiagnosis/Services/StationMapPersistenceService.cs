@@ -26,6 +26,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         private readonly IPLC_BlockCallService _blockCallService;
         private readonly IPLC_BlockService _blockService;
         private readonly ISqlSugarClient _db;
+        private readonly StationPlcScopeService _stationPlcScopeService;
 
         public StationMapPersistenceService(
             IPLC_StationCatalogService stationCatalogService,
@@ -35,8 +36,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             IPLC_VariablePropagationService variablePropagationService,
             IPLC_BlockCallService blockCallService,
             IPLC_BlockService blockService,
-            ISqlSugarClient db)
+            ISqlSugarClient db,
+            StationPlcScopeService stationPlcScopeService)
         {
+            _stationPlcScopeService = stationPlcScopeService;
             _stationCatalogService = stationCatalogService;
             _stationAnchorBindingService = stationAnchorBindingService;
             _stationBlockBindingService = stationBlockBindingService;
@@ -58,22 +61,32 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             var sc = stationCode?.Trim();
             var hasStation = !string.IsNullOrWhiteSpace(sc);
 
-            // 2026-10-08 A：删除+批量写入包进事务，并拿工站绑定项目锁（与 PLC_GraphStationBindingApp.BindAsync
-            // 互斥）。同日用户拍板：ai_plc_stationblockbinding 由「批量绑定工站」弹框人工维护——
-            // 工位提取不再新增自动绑定行，仅软退役历史自动行（reason != '手动绑定'）
+            // 2026-10-14「自动建议 + 人工确认」：提取重新生成自动建议行（只读，事务外算好），
+            // 手动绑定与已拒绝行原样保留（StationBlockBindingRules）
+            var scoredBindings = await BuildBlockBindingsAsync(projectId, stationColoring);
+            var projectBlocks = (await _blockService.GetListAsync(it => it.ProjectId == projectId && it.IsDeleted == false))
+                .Where(it => !string.IsNullOrWhiteSpace(it.BlockName))
+                .Select(it => new GraphBlockRef(it.Id, projectId, it.BlockName, it.StationCode))
+                .ToList();
+            var allowedStations = await _stationPlcScopeService.GetAllowedStationsAsync(projectId);
+
+            // 2026-10-08 A：删除+批量写入包进事务，并拿工站绑定项目锁（与 PLC_GraphStationBindingApp.BindAsync 互斥）
             await _db.Ado.BeginTranAsync();
             try
             {
                 await _db.Ado.ExecuteCommandAsync("SELECT pg_advisory_xact_lock(@key)",
                     new SugarParameter("@key", PLC_GraphStationBindingApp.StationBindingLockKey(projectId)));
 
-                // 按工位范围硬删除旧数据，再用 BulkCopy 批量写入（绑定表仅退役自动行、不新增）
+                // 按工位范围硬删除旧数据，再用 BulkCopy 批量写入。
+                // 块绑定表只删自动建议行（含 10-09 之前 reason 为空或打分原因的自动行）；手动 / 已拒绝行保留
+                const string manualReason = StationBlockBindingRules.ManualReason;
+                const string rejectedReason = StationBlockBindingRules.RejectedReason;
                 if (hasStation)
                 {
                     await _stationCatalogService.DeleteAsync(it => it.ProjectId == projectId && it.StationCode == sc);
                     await _stationAnchorBindingService.DeleteAsync(it => it.ProjectId == projectId && it.StationCode == sc);
                     await _stationBlockBindingService.DeleteAsync(it => it.ProjectId == projectId && it.StationCode == sc
-                        && it.Reason != PLC_GraphStationBindingApp.ManualReason);
+                        && (it.Reason == null || (it.Reason != manualReason && it.Reason != rejectedReason)));
                     await _stationLogicUnitBindingService.DeleteAsync(it => it.ProjectId == projectId && it.StationCode == sc);
                     // VariablePropagation 无 StationCode 字段，指定工位时不做全量删除
                 }
@@ -82,15 +95,30 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     await _stationCatalogService.DeleteAsync(it => it.ProjectId == projectId);
                     await _stationAnchorBindingService.DeleteAsync(it => it.ProjectId == projectId);
                     await _stationBlockBindingService.DeleteAsync(it => it.ProjectId == projectId
-                        && it.Reason != PLC_GraphStationBindingApp.ManualReason);
+                        && (it.Reason == null || (it.Reason != manualReason && it.Reason != rejectedReason)));
                     await _stationLogicUnitBindingService.DeleteAsync(it => it.ProjectId == projectId);
                     await _variablePropagationService.DeleteAsync(it => it.ProjectId == projectId);
                 }
 
                 var stationCatalogs = BuildStationCatalogs(projectId, stationMap);
                 var anchorBindings = BuildAnchorBindings(projectId, stationMap);
-                // 2026-10-08 用户拍板：块↔工站绑定由人工维护，提取不再生成自动绑定行
-                // （BuildBlockBindingsAsync 及其打分逻辑保留备用，不再调用）
+                // 自动建议：名字里只有一个工位号的按名字；否则只采用有直接染色证据、无多工位冲突的打分结果。
+                // 已手动绑定的块不建议、被拒绝过的「块+工站」不再建议、白名单外不建议、每个块名最多一条
+                var keptBindings = await _stationBlockBindingService.GetListAsync(it => it.ProjectId == projectId && it.IsDeleted == false);
+                var suggestions = StationBlockBindingRules.BuildSuggestions(
+                    projectId, scoredBindings, projectBlocks, keptBindings, allowedStations);
+                if (hasStation)
+                {
+                    // 只重提一个工位时只补该工位的建议，且不给其它工位已有建议的块再加一条
+                    var namesWithRows = keptBindings
+                        .Where(it => !string.IsNullOrWhiteSpace(it.BlockName))
+                        .Select(it => it.BlockName.Trim())
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    suggestions = suggestions
+                        .Where(it => string.Equals(it.StationCode, sc, StringComparison.OrdinalIgnoreCase)
+                            && !namesWithRows.Contains(it.BlockName))
+                        .ToList();
+                }
                 var logicUnitBindings = BuildLogicUnitBindings(projectId, stationColoring);
                 var variablePropagations = BuildVariablePropagations(projectId, stationMap);
 
@@ -102,6 +130,11 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 if (anchorBindings.Count > 0)
                 {
                     await _stationAnchorBindingService.BulkCopyAsync(anchorBindings);
+                }
+
+                if (suggestions.Count > 0)
+                {
+                    await _stationBlockBindingService.BulkCopyAsync(suggestions);
                 }
 
                 if (logicUnitBindings.Count > 0)
@@ -168,6 +201,10 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                     it.ProjectId == query.ProjectId &&
                     it.IsDeleted == false &&
                     stationCodes.Contains(it.StationCode));
+            // 被拒绝的自动建议不算绑定
+            blockBindings = blockBindings
+                .Where(it => StationBlockBindingRules.Classify(it.Reason) != StationBindingStatus.Rejected)
+                .ToList();
 
             var variablePropagations = await _variablePropagationService.GetListAsync(it =>
                 it.ProjectId == query.ProjectId &&

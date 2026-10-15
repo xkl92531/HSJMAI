@@ -24,8 +24,11 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
         /// <summary>所属 PLC 项目 Id（ai_plc_project_new.id）</summary>
         public long PlcProjectId { get; set; }
 
-        /// <summary>该块当前的全部有效绑定（ai_plc_stationblockbinding，含自动提取与手动绑定）</summary>
+        /// <summary>该块当前的有效绑定（ai_plc_stationblockbinding，含手动绑定与自动建议，不含已拒绝；同一工站只列一条）</summary>
         public List<PLC_GraphStationBindingItemDTO> Bindings { get; set; } = new List<PLC_GraphStationBindingItemDTO>();
+
+        /// <summary>被拒绝过的自动建议工站（以后提取不再建议到这些工站）</summary>
+        public List<string> RejectedStations { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -39,8 +42,11 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
         /// <summary>工站代码（Basic_WorkStation.Code，如 OP010）</summary>
         public string StationCode { get; set; }
 
-        /// <summary>绑定原因（手动绑定 / DerivedFromStationColoring+BlockCall 等）</summary>
+        /// <summary>绑定原因（手动绑定 / 自动建议:名称含工位号 / 自动建议:工位染色 等）</summary>
         public string Reason { get; set; }
+
+        /// <summary>绑定状态：Manual（人工确认）/ Suggested（自动建议，待确认）</summary>
+        public string Status { get; set; }
 
         /// <summary>归属置信度（手动绑定恒为 1）</summary>
         public decimal? Confidence { get; set; }
@@ -102,6 +108,9 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
 
         /// <summary>跳过明细（最多保留 50 条）</summary>
         public List<PLC_GraphStationBindingSkipDTO> Skipped { get; set; } = new List<PLC_GraphStationBindingSkipDTO>();
+
+        /// <summary>GRAPH 步位重新注册的排队说明（无改动时为空）</summary>
+        public string RegistrationMessage { get; set; }
     }
 
     /// <summary>
@@ -109,10 +118,19 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
     /// </summary>
     public class PLC_GraphStationBindingUnbindResultDTO
     {
-        /// <summary>删除的绑定行数</summary>
+        /// <summary>解绑的行数（含被改记为「已拒绝」的自动建议）</summary>
         public int UnboundCount { get; set; }
 
-        /// <summary>完全解绑后清空 stationcode 的块数</summary>
+        /// <summary>其中被拒绝的自动建议行数</summary>
+        public int RejectedCount { get; set; }
+
+        /// <summary>解绑后 stationcode 回退为剩余绑定 / 染色结果的块数</summary>
+        public int RestoredBlockCount { get; set; }
+
+        /// <summary>解绑后没有任何归属、清空 stationcode 的块数</summary>
         public int ClearedBlockCount { get; set; }
+
+        /// <summary>GRAPH 步位重新注册的排队说明（无改动时为空）</summary>
+        public string RegistrationMessage { get; set; }
     }
 }
