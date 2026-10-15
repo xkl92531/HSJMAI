@@ -66,7 +66,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             var scoredBindings = await BuildBlockBindingsAsync(projectId, stationColoring);
             var projectBlocks = (await _blockService.GetListAsync(it => it.ProjectId == projectId && it.IsDeleted == false))
                 .Where(it => !string.IsNullOrWhiteSpace(it.BlockName))
-                .Select(it => new GraphBlockRef(it.Id, projectId, it.BlockName, it.StationCode))
+                .Select(it => new GraphBlockRef(it.Id, projectId, it.BlockName, it.StationCode, it.Description))
                 .ToList();
             var allowedStations = await _stationPlcScopeService.GetAllowedStationsAsync(projectId);
 

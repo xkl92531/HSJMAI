@@ -6678,7 +6678,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
         }
 
         /// <summary>
-        /// 排查前的工站绑定覆盖提示：范围内工位有哪些 GRAPH 块还没人工确认工站，以及哪些 GRAPH 块没有任何工站
+        /// 排查前的工站绑定提示：只报自动规则拿不准的 GRAPH 块（没有任何工站、或工站证据冲突），自动判断明确的不报
         /// （规则见 StationBlockBindingRules.BuildCoverageWarnings）。
         /// </summary>
         private async Task<List<string>> BuildBindingCoverageWarningsAsync(List<long> projectIds, IEnumerable<string> stationCodes)
@@ -6853,8 +6853,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis
 
                 result.TotalStations = stationProjectPairs.Count;
 
-                // 2026-10-14 排查前提示：本次范围内的工位还有 GRAPH 块未人工确认工站、或有 GRAPH 块没有工站归属时，
-                // 写进 Warnings 随结果返回（只提示，不影响排查）
+                // 2026-10-15 排查前提示（自动为主）：只在有 GRAPH 块没有工站、或工站证据冲突时写进 Warnings，
+                // 随结果返回（只提示，不影响排查）
                 try
                 {
                     result.Warnings.AddRange(await BuildBindingCoverageWarningsAsync(

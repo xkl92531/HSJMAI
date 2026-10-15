@@ -254,26 +254,122 @@ public class StationBlockBindingRulesTests
     // ── 排查前提示 ──
 
     [Fact]
-    public void Coverage_warns_about_unconfirmed_and_unassigned_graph_blocks()
+    public void Coverage_does_not_ask_to_confirm_blocks_the_automatic_rules_are_sure_about()
     {
+        // 2026-10-15：自动为主——自动判断明确的块（只有块工位、或唯一的高置信建议、或两者一致）不提示
         var blocks = new[]
         {
-            Block(1, "FB310_Graph", "OP030"),       // 块工位有值、没人工确认
-            Block(2, "FB320_Graph"),                // 只有自动建议
-            Block(3, "FB330_Graph"),                // 什么都没有
+            Block(1, "FB310_Graph", "OP030"),       // 只有块工位
+            Block(2, "FB320_Graph"),                // 只有唯一高置信建议
+            Block(3, "FB340_Graph", "OP030"),       // 块工位和建议一致
             Block(4, "FB110_Graph", "OP010"),       // 已人工确认
-            Block(5, "FB510_Graph", "OP050"),       // 不在本次排查范围
             Block(6, "FB310_Graph", "OP030"),       // 同名重复行，只算一次
         };
-        var bindings = new[] { Suggested("FB320_Graph", "OP030"), Manual("FB110_Graph", "OP010") };
+        var bindings = new[]
+        {
+            Suggested("FB320_Graph", "OP030"),
+            Suggested("FB340_Graph", "OP030"),
+            Manual("FB110_Graph", "OP010"),
+        };
 
         var warnings = StationBlockBindingRules.BuildCoverageWarnings(
             blocks, bindings, new HashSet<string>(["OP010", "OP030"], StringComparer.OrdinalIgnoreCase));
 
-        Assert.Equal(2, warnings.Count);
-        Assert.Contains(warnings, w => w.StartsWith("OP030 有 2 个 GRAPH 块未人工确认工站") && w.Contains("FB310_Graph") && w.Contains("FB320_Graph"));
-        Assert.Contains(warnings, w => w.StartsWith("有 1 个 GRAPH 块没有工站归属") && w.Contains("FB330_Graph"));
-        Assert.DoesNotContain(warnings, w => w.Contains("FB110_Graph") || w.Contains("FB510_Graph"));
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Coverage_warns_about_blocks_without_any_station()
+    {
+        var warnings = StationBlockBindingRules.BuildCoverageWarnings(
+            [Block(3, "FB330_Graph"), Block(7, "FB370_Graph")],
+            [Suggested("FB370_Graph", "OP030", 0.4m)],     // 置信度不够，等于没有
+            new HashSet<string>(["OP030"], StringComparer.OrdinalIgnoreCase));
+
+        var warning = Assert.Single(warnings);
+        Assert.StartsWith("有 2 个 GRAPH 块没有工站归属", warning);
+        Assert.Contains("FB330_Graph", warning);
+        Assert.Contains("FB370_Graph", warning);
+    }
+
+    [Fact]
+    public void Coverage_warns_when_block_station_and_suggestion_disagree()
+    {
+        var warnings = StationBlockBindingRules.BuildCoverageWarnings(
+            [Block(1, "FB310_Graph", "OP030")],
+            [Suggested("FB310_Graph", "OP020")],
+            new HashSet<string>(["OP020", "OP030"], StringComparer.OrdinalIgnoreCase));
+
+        var warning = Assert.Single(warnings);
+        Assert.StartsWith("有 1 个 GRAPH 块工站判断有冲突", warning);
+        Assert.Contains("FB310_Graph（OP030/OP020）", warning);
+    }
+
+    [Fact]
+    public void Coverage_warns_when_suggestions_tie_on_different_stations()
+    {
+        var warnings = StationBlockBindingRules.BuildCoverageWarnings(
+            [Block(1, "FB310_Graph")],
+            [Suggested("FB310_Graph", "OP020", 0.8m), Suggested("FB310_Graph", "OP030", 0.8m)],
+            new HashSet<string>(["OP030"], StringComparer.OrdinalIgnoreCase));
+
+        var warning = Assert.Single(warnings);
+        Assert.Contains("FB310_Graph（OP020/OP030）", warning);
+    }
+
+    [Fact]
+    public void Coverage_ignores_conflicts_entirely_outside_the_diagnosed_stations()
+    {
+        var warnings = StationBlockBindingRules.BuildCoverageWarnings(
+            [Block(1, "FB510_Graph", "OP050")],
+            [Suggested("FB510_Graph", "OP060")],
+            new HashSet<string>(["OP030"], StringComparer.OrdinalIgnoreCase));
+
+        Assert.Empty(warnings);
+    }
+
+    // ── 自动建议也看块描述（注释）──
+
+    [Fact]
+    public void Block_description_with_one_station_number_gives_a_suggestion()
+    {
+        var suggestions = StationBlockBindingRules.BuildSuggestions(
+            Project, [], [new GraphBlockRef(9, Project, "FB360_MainGraph", null, "OP030 主流程")], [], null);
+
+        var s = Assert.Single(suggestions);
+        Assert.Equal(("FB360_MainGraph", "OP030"), (s.BlockName, s.StationCode));
+        Assert.Contains("描述含工位号", s.Reason);
+        Assert.True(s.Confidence >= StationBlockBindingRules.SuggestionUseThreshold);
+    }
+
+    [Fact]
+    public void Block_name_wins_over_block_description()
+    {
+        var suggestions = StationBlockBindingRules.BuildSuggestions(
+            Project, [], [new GraphBlockRef(9, Project, "FB220_OP20Manual", null, "与 OP030 交接")], [], null);
+
+        Assert.Equal("OP020", Assert.Single(suggestions).StationCode);
+    }
+
+    [Fact]
+    public void Block_description_mentioning_several_stations_gives_no_suggestion()
+    {
+        var suggestions = StationBlockBindingRules.BuildSuggestions(
+            Project, [], [new GraphBlockRef(9, Project, "FB360_MainGraph", null, "OP020 到 OP030 转运")], [], null);
+
+        Assert.Empty(suggestions);
+    }
+
+    [Fact]
+    public void Block_description_beats_coloring_but_name_still_beats_both()
+    {
+        var suggestions = StationBlockBindingRules.BuildSuggestions(
+            Project,
+            [Row("FB360_MainGraph", "OP070", "DerivedFromStationColoring+BlockCall", 0.9m, 9)],
+            [new GraphBlockRef(9, Project, "FB360_MainGraph", null, "OP030 主流程")],
+            [], null);
+
+        Assert.Equal("OP030", Assert.Single(suggestions).StationCode);
     }
 
     [Fact]

@@ -15,7 +15,8 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
 
     public sealed record StationBindingResolution(string StationCode, StationBindingSource Source);
 
-    public sealed record GraphBlockRef(long BlockId, long ProjectId, string BlockName, string? StationCode);
+    /// <summary>块的最小信息；Description 为块注释（自动建议在块名没有工位号时会看它）</summary>
+    public sealed record GraphBlockRef(long BlockId, long ProjectId, string BlockName, string? StationCode, string? Description = null);
 
     /// <summary>一次手动绑定要做的数据变更。</summary>
     public sealed class ManualBindPlan
@@ -48,6 +49,7 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
         public const decimal SuggestionUseThreshold = 0.6m;
 
         private const decimal NameRuleConfidence = 0.9m;
+        private const decimal DescriptionRuleConfidence = 0.8m;
         private const string ColoringReasonPrefix = "DerivedFromStationColoring";
         private const int MaxNamesInWarning = 5;
 
@@ -150,7 +152,15 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
             {
                 var nameStation = NameDerivedStation(block.BlockName, null, allowed);
                 if (nameStation != null)
+                {
                     TryAdd(block.BlockId, block.BlockName, nameStation, NameRuleConfidence, "名称含工位号", null);
+                    continue;
+                }
+
+                // 块名没有工位号时看块注释（如 FB360_MainGraph 的注释写着 OP030）；注释里提到多个工位就不建议
+                var descriptionStation = NameDerivedStation(block.Description, null, allowed);
+                if (descriptionStation != null)
+                    TryAdd(block.BlockId, block.BlockName, descriptionStation, DescriptionRuleConfidence, "描述含工位号", null);
             }
 
             foreach (var candidate in scored ?? Enumerable.Empty<PLC_StationBlockBindingEntity>())
@@ -307,7 +317,10 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
         }
 
         /// <summary>
-        /// 一键排查前的提示：范围内工位还有哪些 GRAPH 块没人工确认工站，以及哪些 GRAPH 块没有任何工站。
+        /// 一键排查前的提示（2026-10-15 改为「自动为主」）：只提示自动规则拿不准的 GRAPH 块——
+        /// ① 没有任何工站（块工位为空、也没有高置信建议）；② 证据冲突（块工位与高置信建议不一致，
+        /// 或多个建议同分指向不同工站），冲突只在涉及本次排查的工位时提示。
+        /// 已人工确认的、自动判断明确的块都不提示，平时不需要手动绑定。
         /// </summary>
         public static List<string> BuildCoverageWarnings(
             IEnumerable<GraphBlockRef> graphBlocks,
@@ -315,7 +328,7 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
             ISet<string> stationsInScope)
         {
             var rows = Live(bindings).ToList();
-            var unconfirmed = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var conflicts = new List<string>();
             var unassigned = new List<string>();
 
             foreach (var block in (graphBlocks ?? Enumerable.Empty<GraphBlockRef>())
@@ -329,29 +342,65 @@ namespace HSJM.AI.AppLayer.PLC.PLC_GraphStationBinding
                 if (blockRows.Any(r => Classify(r.Reason) == StationBindingStatus.Manual))
                     continue;
 
-                var resolution = ResolveBlockStation(blockRows, block.StationCode, null);
-                if (resolution == null)
+                var name = block.BlockName.Trim();
+                var conflictStations = FindConflictStations(blockRows, block.StationCode);
+                if (conflictStations == null)
                 {
-                    unassigned.Add(block.BlockName.Trim());
+                    if (ResolveBlockStation(blockRows, block.StationCode, null) == null)
+                        unassigned.Add(name);
                 }
-                else if (stationsInScope != null && stationsInScope.Contains(resolution.StationCode))
+                else if (stationsInScope != null && conflictStations.Any(stationsInScope.Contains))
                 {
-                    if (!unconfirmed.TryGetValue(resolution.StationCode, out var names))
-                        unconfirmed[resolution.StationCode] = names = new List<string>();
-                    names.Add(block.BlockName.Trim());
+                    conflicts.Add($"{name}（{string.Join("/", conflictStations)}）");
                 }
             }
 
-            var warnings = unconfirmed
-                .Select(kv => $"{kv.Key} 有 {kv.Value.Count} 个 GRAPH 块未人工确认工站：{JoinNames(kv.Value)}，" +
-                              "当前按提取结果或自动建议判断，建议在「批量绑定工站」中确认")
-                .ToList();
+            var warnings = new List<string>();
+            if (conflicts.Count > 0)
+            {
+                warnings.Add($"有 {conflicts.Count} 个 GRAPH 块工站判断有冲突：{JoinNames(conflicts)}，" +
+                             "当前按块工位或置信度最高的建议判断，建议在「批量绑定工站」中确认");
+            }
             if (unassigned.Count > 0)
             {
                 warnings.Add($"有 {unassigned.Count} 个 GRAPH 块没有工站归属：{JoinNames(unassigned)}，" +
                              "这些块的步不会计入任何工位，建议在「批量绑定工站」中绑定");
             }
             return warnings;
+        }
+
+        /// <summary>
+        /// 块的工站证据是否冲突：块工位与高置信建议不一致，或没有块工位时多个建议同分指向不同工站。
+        /// 冲突时返回涉及的工站（块工位在前），不冲突返回 null。
+        /// </summary>
+        private static List<string>? FindConflictStations(List<PLC_StationBlockBindingEntity> blockRows, string? blockStationCode)
+        {
+            var strong = blockRows
+                .Where(r => Classify(r.Reason) == StationBindingStatus.Suggested
+                            && !string.IsNullOrWhiteSpace(r.StationCode)
+                            && (r.Confidence ?? 0m) >= SuggestionUseThreshold)
+                .ToList();
+            var blockStation = blockStationCode?.Trim();
+
+            if (!string.IsNullOrEmpty(blockStation))
+            {
+                var disagreeing = strong
+                    .Select(r => r.StationCode.Trim())
+                    .Where(code => !SameStation(code, blockStation))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                return disagreeing.Count == 0 ? null : new[] { blockStation }.Concat(disagreeing).ToList();
+            }
+
+            if (strong.Count == 0)
+                return null;
+            var top = strong.Max(r => r.Confidence ?? 0m);
+            var topStations = strong
+                .Where(r => (r.Confidence ?? 0m) == top)
+                .Select(r => r.StationCode.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return topStations.Count > 1 ? topStations : null;
         }
 
         // ── 工具 ──
