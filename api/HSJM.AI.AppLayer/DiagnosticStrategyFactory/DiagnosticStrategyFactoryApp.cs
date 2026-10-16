@@ -151,12 +151,19 @@ namespace HSJM.AI.AppLayer.DiagnosticStrategyFactory
         DiagnosticMemoryService memoryService,
         ILogger<DiagnosticStrategyFactoryApp> logger = null,
         HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeReader manualModeReader = null,
-        IPLC_BlockInterfaceService blockInterfaceService = null) : ISelfScopedAutoInject
+        IPLC_BlockInterfaceService blockInterfaceService = null,
+        HSJM.AI.AppLayer.PLC.IndependentPipeline.PostgresPipelineStore pipelineStore = null) : ISelfScopedAutoInject
     {
         /// <summary>日志（可空：测试直接构造时不注入）</summary>
         private readonly ILogger<DiagnosticStrategyFactoryApp> _logger = logger;
         private readonly HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeReader _manualModeReader = manualModeReader;
         private readonly IPLC_BlockInterfaceService _feedbackBlockInterfaces = blockInterfaceService;
+        /// <summary>报警清单所在的独立管道库（可空：未启用或测试直接构造时为 null，完整反馈判定只用规则自身信息）</summary>
+        private readonly HSJM.AI.AppLayer.PLC.IndependentPipeline.PostgresPipelineStore _pipelineStore = pipelineStore;
+
+        /// <summary>测试替换报警清单读取（按项目返回清单行）；生产为 null，读独立管道库。</summary>
+        internal Func<long, CancellationToken, Task<IReadOnlyList<HSJM.AI.AppLayer.PLC.IndependentPipeline.Understanding.AlarmCatalogRow>>>
+            TimeoutAlarmCatalogOverride { get; set; }
 
         internal Func<long, IReadOnlyList<HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeBinding>,
             CancellationToken, Task<HSJM.AI.AppLayer.PLC.IndependentPipeline.Original353.Original353ManualModeRead>> ManualModeReadOverride { get; set; }

@@ -62,6 +62,38 @@ internal static class FullFeedbackLogic
         { return []; }
     }
 
+    /// <summary>报警清单 Timeout 行 → 到位逻辑（任何 FB 库）：输出与命令同名的行恰好一条才用；规则目标须都在行的到位点里。
+    /// 到位 = 任一到位组全部为 true，或任一旁路（规则旁路 ∪ 行前提）为 true；超时报警 = 行的报警位。</summary>
+    internal static FeedbackLogicPlan? FromCatalog(string command, IReadOnlyCollection<string> targets,
+        IReadOnlyCollection<string> ruleBypass, IReadOnlyList<HSJM.AI.AppLayer.PLC.IndependentPipeline.Understanding.AlarmCatalogRow> catalog)
+    {
+        if (string.IsNullOrWhiteSpace(command) || catalog is null) return null;
+        var rows = catalog.Where(r => string.Equals(r.OutputSignal?.Trim(), command.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (rows.Length != 1) return null;
+        var row = rows[0];
+        var groups = (row.FeedbackGroups is { Count: > 0 } ? row.FeedbackGroups : [row.FeedbackSignals ?? []])
+            .Select(g => (g ?? []).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
+            .Where(g => g.Length > 0).ToArray();
+        if (groups.Length == 0) return null;
+        var points = groups.SelectMany(g => g).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (targets.Any(t => !points.Contains(t))) return null;
+        var bypass = (ruleBypass ?? []).Concat(row.Preconditions ?? [])
+            .Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return new(command, Reached(groups, bypass), row.AlarmSymbol);
+    }
+
+    static LogicTerm Reached(IReadOnlyList<string[]> groups, IReadOnlyList<string> bypass)
+    {
+        var options = groups.Select(g => g.Length == 1 ? LogicTerm.Signal(g[0])
+                : new LogicTerm("And", Children: g.Select(LogicTerm.Signal).ToArray()))
+            .Concat(bypass.Select(LogicTerm.Signal)).ToArray();
+        return options.Length == 1 ? options[0] : new LogicTerm("Or", Children: options);
+    }
+
+    /// <summary>同一命令、同一报警位、同一到位逻辑的规则只判一次。</summary>
+    internal static string PlanKey(FeedbackLogicPlan plan) =>
+        plan.Command + "|" + (plan.Alarm ?? "") + "|" + Format(plan.Feedback);
+
     internal static IReadOnlyList<string>? GlobalWriters(IEnumerable<string> networks)
     {
         var writes = new List<string>();
