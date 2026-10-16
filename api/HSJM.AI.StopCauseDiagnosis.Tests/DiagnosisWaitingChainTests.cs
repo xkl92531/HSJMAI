@@ -154,10 +154,24 @@ public class DiagnosisWaitingChainTests
     }
 
     [Fact]
-    public void Wait_graph_without_any_independent_fault_cannot_create_a_root()
+    public void Wait_graph_without_any_independent_fault_keeps_the_waited_on_model_root_as_unconfirmed()
     {
+        // 2026-10-15 用户裁定：没有报警/确认违规时，被实际为 False 的等待链指向的模型根因保留为待确认。
         var report = Diagnose([Station("Feed", "Transfer"), Station("Transfer", "Clamp"), Station("Clamp")], "Clamp");
+        Assert.Equal("Clamp", report.RootCauseStation);
+        Assert.True(report.RootCauseTentative);
+        Assert.Equal("RootCause", Analysis(report, "Clamp").Role);
+        Assert.Equal("Impacted", Analysis(report, "Feed").Role);
+        Assert.Equal("Impacted", Analysis(report, "Transfer").Role);
+        Assert.Contains("Feed 等待 Transfer → Transfer 等待 Clamp", report.ImpactChain);
+    }
+
+    [Fact]
+    public void Wait_graph_without_any_independent_fault_does_not_keep_a_waiting_station_as_root()
+    {
+        var report = Diagnose([Station("Feed", "Transfer"), Station("Transfer", "Clamp"), Station("Clamp")], "Feed");
         Assert.Null(report.RootCauseStation);
+        Assert.False(report.RootCauseTentative);
         Assert.All(report.StationAnalysis, station => Assert.Equal("Unknown", station.Role));
         Assert.Empty(report.SecondaryCauses);
     }

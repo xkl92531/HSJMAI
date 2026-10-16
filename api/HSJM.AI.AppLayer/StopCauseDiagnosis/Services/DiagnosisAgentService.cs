@@ -320,12 +320,12 @@ English JSON style example:
 - FALSE 的信号不一定是故障，可能是正常等待（按需工位、等待上游物料）
 - InternalFault 仅为归属标签，不证明故障；WaitingFor 只说明工位在等待，不证明另一工位发生故障。
 - False、Unknown、GRAPH execbits 活动位及 FailurePathSummary 都不能独立证明故障。仅使用 Good 且激活的 PLC 报警或标有“判定: 确认违规”的 IO 规则作为故障候选；报警可能锁存，不等于机械部件已损坏。
-- 缺少独立证据时 rootCauseStation 必须为 null。rootCauseDescription、reasoning、stationAnalysis、secondaryCauses、suggestedActions 都不得重新引入未经证实的故障或通信中断断言。
+- 没有激活报警或确认违规时，仍要给出最可能的根因工位填入 rootCauseStation，并写明是待确认判断：依据执行机构反馈（阀/气缸输出与到位反馈矛盾）、GRAPH 卡在非握手类条件的步，以及实际为 False 的等待链（别的工位在等它）。只在等别的工位、或只卡在机器人/完成/允许/就绪类握手信号的工位不要选；确实判断不了才填 null。不得断言产线正常。这种情况下 rootCauseDescription、reasoning、stationAnalysis、secondaryCauses、suggestedActions 都只能写成待确认，不得断言已确认故障或通信中断。
 - 只有实际为 False 的 WaitingFor 边直接或多跳到独立故障候选，才能将沿链的纯等待工位标为 Impacted；多候选时 rootCauseStation=null，仍保留每个候选的已证明等待链，同一等待站通向多个候选必须明确无法唯一归属。Unknown、循环、跨项目同名歧义或自身独立故障不得简单标为连带，禁止按工位编号猜传播。
 - 变化最近的信号更可能是故障触发点
 - GRAPH 块中 Transition 未满足表示该步骤在等待条件，需查看条件叶子
 - Reach/Pick/Drop/完成/允许/就绪/同步等状态为 False，及 L1/L2 近端追踪、物理反馈等待都只帮助定位待核实条件，不独立支持根因。
-- GRAPH 转换等待物理反馈不能直接叫作执行机构卡滞。仅在独立报警/确认违规存在时列候选，并区分当前状态、锁存报警和待确认根因。
+- GRAPH 转换等待物理反馈不能直接叫作执行机构卡滞。没有独立报警/确认违规时，它可以作为待确认根因的依据，但要写成待确认；有报警/违规时区分当前状态、锁存报警和待确认根因。
 - IO 条目必须标有“判定: 确认违规”才能作为候选；保留已读取的信号名及地址，无法判定/未采到不能作为故障点。
 - IO 约束报告只是内部证据来源。最终面向用户的 rootCauseDescription、impactChain、stationAnalysis、secondaryCauses、suggestedActions 中不要使用“IO约束诊断确认”“约束诊断服务确认”“IO约束故障”等内部来源表述。只描述已确认信号和报警/违规事实，明确根因待确认，不写“AI诊断确认存在故障”或推断机械损坏。
 

@@ -530,6 +530,13 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.DTOS
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
         public bool EvidenceOnly { get; set; }
 
+        /// <summary>
+        /// 根因工位待确认：没有激活的 PLC 报警或确认违规，RootCauseStation 是模型按执行机构反馈、
+        /// GRAPH 卡步和等待链给出的判断（2026-10-15）。
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool RootCauseTentative { get; set; }
+
         public string RootCauseStation { get; set; }
 
         public string RootCauseDescription { get; set; }

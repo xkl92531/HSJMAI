@@ -50,7 +50,16 @@ internal static class DiagnosisEvidenceGuard
         // A model preference cannot resolve multiple independent faults or project ambiguity.
         var selected = candidates.Count == 1 && !profiles.Any(p => p.HasConfirmedFaultEvidence && p.AmbiguousStation)
             ? candidates[0] : null;
-        var impactPaths = BuildImpactPaths(profiles);
+        var candidateSummaries = profiles.Where(p => p.HasConfirmedFaultEvidence).Select(p =>
+        {
+            var identity = p.AmbiguousStation ? $"{p.StationCode} (ProjectId={p.ProjectId})" : p.StationCode;
+            return $"{identity}: {candidateLabel}. {string.Join("; ", p.ConfirmedEvidence)}";
+        }).Distinct().ToList();
+        // 2026-10-15 用户裁定：没有任何报警/确认违规时，模型按执行机构反馈、GRAPH 卡步和等待链给出的
+        // 根因工位保留为待确认；有报警或违规时仍只按证据选根因。
+        var tentative = candidateSummaries.Count == 0 && !report.EvidenceOnly
+            ? SelectTentativeRoot(report.RootCauseStation, profiles) : null;
+        var impactPaths = BuildImpactPaths(profiles, tentative?.StationCode);
         string DescribePath(IReadOnlyList<string> path) => string.Join(" → ",
             Enumerable.Range(0, path.Count - 1).Select(i => T(
                 $"{path[i]} 等待 {path[i + 1]}", $"{path[i]} waits for {path[i + 1]}",
@@ -60,6 +69,12 @@ internal static class DiagnosisEvidenceGuard
             var chains = string.Join("; ", pair.Value.Select(DescribePath));
             var targets = pair.Value.Select(path => path[^1]).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var targetText = string.Join(", ", targets);
+            if (tentative != null)
+                return T(
+                    $"连带受阻：{chains}。上述等待条件实际为 False，等待链指向待确认根因 [{targetText}]；未发现本站独立故障证据。",
+                    $"Blocked by dependency: {chains}. These waiting conditions are FALSE and reach the unconfirmed root cause [{targetText}]; no independent fault evidence was found at this station.",
+                    $"連帶受阻：{chains}。上述等待條件實際為 False，等待鏈指向待確認根因 [{targetText}]；未發現本站獨立故障證據。",
+                    $"依存先を待機して停止：{chains}。待機条件は False であり、未確定の根本原因 [{targetText}] に到達します。このステーション自体の独立した故障証拠は見つかっていません。");
             var summary = T(
                 $"连带受阻：{chains}。上述等待条件实际为 False，等待链指向独立故障候选 [{targetText}]；未发现本站独立故障证据。",
                 $"Blocked by dependency: {chains}. These waiting conditions are FALSE and reach independent fault candidates [{targetText}]; no independent fault evidence was found at this station.",
@@ -69,11 +84,12 @@ internal static class DiagnosisEvidenceGuard
                 "Multiple candidates remain; attribution is not unique.", "存在多個候選，無法唯一歸屬。", "複数の候補があり、原因を一意に特定できません。");
             return summary;
         }, StringComparer.OrdinalIgnoreCase);
-        var candidateSummaries = profiles.Where(p => p.HasConfirmedFaultEvidence).Select(p =>
+        if (tentative != null)
         {
-            var identity = p.AmbiguousStation ? $"{p.StationCode} (ProjectId={p.ProjectId})" : p.StationCode;
-            return $"{identity}: {candidateLabel}. {string.Join("; ", p.ConfirmedEvidence)}";
-        }).Distinct().ToList();
+            ApplyTentativeRoot(report, tentative, profiles, impactPaths, impactedSummaries, DescribePath, T);
+            return;
+        }
+        report.RootCauseTentative = false;
 
         report.RootCauseStation = selected?.StationCode;
         report.RootCauseDescription = candidateSummaries.Count == 0 ? insufficient
@@ -140,8 +156,113 @@ internal static class DiagnosisEvidenceGuard
                 "まず上記の独立した故障候補のアラームとフィードバックを確認し、確認済みの依存経路に沿って待機条件が解除されるかを確認してください。"));
     }
 
+    /// <summary>
+    /// 没有报警/确认违规时，模型选的根因工位能否保留为待确认：该工位只出现一次（不跨项目重名）、本身异常、
+    /// 不是只在等别的工位，并且有执行机构反馈、非握手类的 GRAPH 卡步，或有别的工位实际在等它。
+    /// </summary>
+    internal static LineDiagnosisLlmService.StationRootCauseEvidenceProfile SelectTentativeRoot(
+        string modelRoot, IReadOnlyList<LineDiagnosisLlmService.StationRootCauseEvidenceProfile> profiles)
+    {
+        if (string.IsNullOrWhiteSpace(modelRoot) || profiles == null) return null;
+        var code = modelRoot.Trim();
+        var matches = profiles.Where(p => string.Equals(p.StationCode, code, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count != 1 || matches[0].AmbiguousStation) return null;
+        var root = matches[0];
+        if (!string.Equals(root.OverallStatus, "SomeFalse", StringComparison.OrdinalIgnoreCase)) return null;
+        var actuator = root.DirectActuatorFeedbackCount > 0;
+        if (root.ConfirmedWaitingTargets.Count > 0 && !actuator) return null;
+        var graphStuck = root.GraphTransitionBlockCount > 0 && !root.IsMostlyProcessHandshake;
+        var waitedOn = profiles.Any(p => !p.AmbiguousStation
+            && !string.Equals(p.StationCode, root.StationCode, StringComparison.OrdinalIgnoreCase)
+            && p.ConfirmedWaitingTargets.Contains(root.StationCode));
+        return actuator || graphStuck || waitedOn ? root : null;
+    }
+
+    private static void ApplyTentativeRoot(LineDiagnosisLlmReport report,
+        LineDiagnosisLlmService.StationRootCauseEvidenceProfile root,
+        IReadOnlyList<LineDiagnosisLlmService.StationRootCauseEvidenceProfile> profiles,
+        Dictionary<string, List<IReadOnlyList<string>>> impactPaths,
+        Dictionary<string, string> impactedSummaries,
+        Func<IReadOnlyList<string>, string> describePath,
+        Func<string, string, string, string, string> T)
+    {
+        var code = root.StationCode;
+        var modelDescription = report.RootCauseDescription?.Trim();
+        var modelReasoning = report.Reasoning?.Trim();
+        var modelImpact = report.ImpactChain?.Trim();
+        var modelAnalysis = report.StationAnalysis ?? new List<LineDiagnosisStationAnalysis>();
+        var modelSecondary = report.SecondaryCauses ?? new List<SecondaryCauseItem>();
+        var modelActions = report.SuggestedActions ?? new List<string>();
+
+        var header = T(
+            $"待确认根因：{code}。未读到激活的 PLC 报警或确认违规，以下是模型根据执行机构反馈、GRAPH 卡步和等待链给出的判断，需现场确认。",
+            $"Unconfirmed root cause: {code}. No active PLC alarm or confirmed violation was read; the following is the model's judgement from actuator feedback, stuck GRAPH steps and waiting chains, and must be confirmed on site.",
+            $"待確認根因：{code}。未讀到啟動的 PLC 警報或確認違規，以下是模型根據執行機構回饋、GRAPH 卡步和等待鏈給出的判斷，需現場確認。",
+            $"未確定の根本原因：{code}。有効な PLC アラームや確認済み違反は読み取れていません。以下はアクチュエータのフィードバック、GRAPH の停止ステップ、待機経路からモデルが推定したもので、現場確認が必要です。");
+        var basis = root.Reasons.Count == 0 ? null
+            : T("依据：", "Basis: ", "依據：", "根拠：") + string.Join("；", root.Reasons.Take(3));
+        report.RootCauseStation = code;
+        report.RootCauseTentative = true;
+        report.RootCauseDescription = string.Join("\n",
+            new[] { header, modelDescription, basis }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        report.ImpactChain = impactPaths.Count > 0
+            ? T("指向待确认根因的已确认等待链：", "Observed waiting paths to the unconfirmed root cause: ",
+                "指向待確認根因的已確認等待鏈：", "未確定の根本原因への確認済み待機経路：")
+                + string.Join("; ", impactPaths.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+                    .SelectMany(p => p.Value).Select(describePath))
+            : !string.IsNullOrWhiteSpace(modelImpact)
+                ? T("（待确认）", "(Unconfirmed) ", "（待確認）", "（未確定）") + modelImpact
+                : T("工位间因果关系尚未确认。", "Causal relationships between stations are unconfirmed.",
+                    "工位間因果關係尚未確認。", "ステーション間の因果関係は未確定です。");
+        report.Reasoning = string.Join("\n",
+            new[] { report.RootCauseDescription, report.ImpactChain, modelReasoning }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        // 待确认根因的显示上限低于有证据的候选（0.65），不抬高模型自己的置信度。
+        report.Confidence = double.IsFinite(report.Confidence) ? Math.Clamp(report.Confidence, 0, 0.5) : 0;
+
+        string ModelSummary(string station) => modelAnalysis.FirstOrDefault(a =>
+            string.Equals(a?.StationCode, station, StringComparison.OrdinalIgnoreCase))?.Summary?.Trim();
+        var noEvidence = T("未发现独立故障证据。", "No independent fault evidence was found.",
+            "未發現獨立故障證據。", "独立した故障証拠は見つかっていません。");
+        report.StationAnalysis = profiles.GroupBy(p => p.StationCode, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                if (string.Equals(g.Key, code, StringComparison.OrdinalIgnoreCase))
+                    return new LineDiagnosisStationAnalysis
+                    {
+                        StationCode = g.Key, Role = "RootCause",
+                        Summary = T("待确认根因。", "Unconfirmed root cause. ", "待確認根因。", "未確定の根本原因。")
+                            + (ModelSummary(g.Key) ?? basis ?? string.Empty)
+                    };
+                if (impactedSummaries.TryGetValue(g.Key, out var impacted))
+                    return new LineDiagnosisStationAnalysis { StationCode = g.Key, Role = "Impacted", Summary = impacted };
+                var model = modelAnalysis.FirstOrDefault(a =>
+                    string.Equals(a?.StationCode, g.Key, StringComparison.OrdinalIgnoreCase));
+                var role = model?.Role is "Impacted" or "Normal" ? model.Role : "Unknown";
+                return new LineDiagnosisStationAnalysis
+                {
+                    StationCode = g.Key, Role = role,
+                    Summary = string.IsNullOrWhiteSpace(model?.Summary) ? noEvidence : model.Summary
+                };
+            }).ToList();
+
+        report.SecondaryCauses = impactedSummaries.Select(pair => new SecondaryCauseItem
+            { StationCode = pair.Key, Description = pair.Value }).ToList();
+        foreach (var item in modelSecondary.Where(s => s != null && !string.IsNullOrWhiteSpace(s.StationCode)
+            && !string.Equals(s.StationCode, code, StringComparison.OrdinalIgnoreCase)
+            && !impactedSummaries.ContainsKey(s.StationCode)))
+            report.SecondaryCauses.Add(item);
+
+        report.SuggestedActions = modelActions.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+        report.SuggestedActions.Add(T(
+            $"先到现场确认 {code} 的动作命令是否发出、执行机构是否动作、到位反馈是否正常；当前未读到激活的 PLC 报警或确认违规。",
+            $"Confirm on site whether {code}'s action command was issued, the actuator moved and the position feedback is correct; no active PLC alarm or confirmed violation was read.",
+            $"先到現場確認 {code} 的動作命令是否發出、執行機構是否動作、到位回饋是否正常；目前未讀到啟動的 PLC 警報或確認違規。",
+            $"{code} の動作指令が出ているか、アクチュエータが動いたか、位置フィードバックが正しいかを現場で確認してください。有効な PLC アラームや確認済み違反は読み取れていません。"));
+    }
+
     private static Dictionary<string, List<IReadOnlyList<string>>> BuildImpactPaths(
-        IReadOnlyList<LineDiagnosisLlmService.StationRootCauseEvidenceProfile> profiles)
+        IReadOnlyList<LineDiagnosisLlmService.StationRootCauseEvidenceProfile> profiles,
+        string tentativeTarget = null)
     {
         var paths = new Dictionary<string, List<IReadOnlyList<string>>>(StringComparer.OrdinalIgnoreCase);
 
@@ -153,8 +274,10 @@ internal static class DiagnosisEvidenceGuard
         var graph = stations.ToDictionary(pair => pair.Key, pair => pair.Value
             .SelectMany(p => p.ConfirmedWaitingTargets).Where(stations.ContainsKey)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.OrdinalIgnoreCase);
-        var independentFaults = stations.Where(pair => pair.Value.Any(p => p.HasConfirmedFaultEvidence))
-            .Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var independentFaults = tentativeTarget != null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { tentativeTarget }
+            : stations.Where(pair => pair.Value.Any(p => p.HasConfirmedFaultEvidence))
+                .Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Iterative graph walks are bounded by the number of stations and avoid recursion depth risks.
         // Exclude actual cycle members even if a cycle also has an outgoing edge to the fault station.

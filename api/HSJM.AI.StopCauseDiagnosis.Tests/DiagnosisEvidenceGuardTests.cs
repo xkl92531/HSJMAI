@@ -72,13 +72,17 @@ public class DiagnosisEvidenceGuardTests
     }
 
     [Fact]
-    public void Physical_feedback_false_and_trace_are_not_independent_fault_proof()
+    public void Physical_feedback_false_and_trace_keep_the_model_root_only_as_unconfirmed()
     {
+        // 2026-10-15 用户裁定：没有报警/确认违规时，执行机构反馈支撑的模型根因保留为待确认，而不是清空。
         var station = Waiting("OP020_CYL01_FwdPos");
         station.KeyFindings[0].IoTagAddress = "%I1.0";
         var report = Hallucinated();
         Guard(report, [station]);
-        Assert.Null(report.RootCauseStation);
+        Assert.Equal("OP020", report.RootCauseStation);
+        Assert.True(report.RootCauseTentative);
+        Assert.StartsWith("待确认", report.RootCauseDescription);
+        Assert.InRange(report.Confidence, 0, .5);
     }
 
     [Fact]

@@ -384,7 +384,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             sb.AppendLine("3. False、Unknown、GRAPH execbits 和完成/允许/握手状态不能独立证明故障，也不能证明通信中断。");
             sb.AppendLine("4. 仅 Good 且激活的 PLC 报警，或标有‘判定: 确认违规’的 IO 条目，支持故障候选。报警可能锁存，不能由此断言当前机械部件损坏。");
             sb.AppendLine("5. AllTrue/Running 只描述活动状态，不得排除同工位的独立 PLC 报警。");
-            sb.AppendLine("6. 没有独立证据时 rootCauseStation=null，role=Unknown，明确证据不足；不得反向断言产线正常。");
+            sb.AppendLine("6. 没有激活报警或确认违规时，仍要给出最可能的根因工位填入 rootCauseStation，并写明是待确认判断：依据执行机构反馈（阀/气缸输出与到位反馈矛盾）、GRAPH 卡在非握手类条件的步，以及实际为 False 的等待链（别的工位在等它）。只在等别的工位、或只卡在机器人/完成/允许/就绪类握手信号的工位不要选；确实判断不了才填 null。不得断言产线正常。");
             sb.AppendLine("7. 只有条件确实为 False 的 WaitingFor 边可以建立等待链。链直接或多跳到有独立报警/确认违规的候选工位时，沿链的纯等待工位可标记 Impacted。多个独立候选时 rootCauseStation=null，并保留每个候选的已证明等待链；同一等待站通向多个候选必须明确无法唯一归属。未知条件、循环、跨项目同名歧义及自身独立故障不得简单归为连带，禁止按工位编号或模型猜测建立关系。");
             sb.AppendLine("8. 所有公开字段遵守同一证据门槛，包括根因、工位摘要、次因、建议动作和推理。现场建议用于核实信号及命令，不得把猜测当已发生故障。");
             sb.AppendLine();
@@ -440,8 +440,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         {
             sb.AppendLine("## 输出要求");
             sb.AppendLine(isEnglishOutput
-                ? "Return JSON only. Use null for rootCauseStation unless independent fault evidence supports a station candidate. A candidate is not a confirmed physical root cause."
-                : "只返回 JSON。缺少独立故障证据时 rootCauseStation 为 null；有证据时也只能描述待确认候选，不能宣称已确认物理根因。");
+                ? "Return JSON only. With an active PLC alarm or a confirmed violation, choose the root cause from that evidence. Without them, still give the most likely root-cause station from actuator feedback, a GRAPH step stuck on a non-handshake condition and FALSE waiting chains, and describe it as unconfirmed; use null only when no station can be judged. A candidate is not a confirmed physical root cause."
+                : "只返回 JSON。有激活报警或确认违规时按证据选根因；没有时也要按执行机构反馈、GRAPH 卡步和等待链给出最可能的根因工位，写成待确认；确实判断不了才填 null。都不能宣称已确认物理根因。");
             sb.AppendLine("{\"rootCauseStation\":null,\"rootCauseDescription\":\"\",\"confidence\":0,\"impactChain\":\"\",\"stationAnalysis\":[],\"secondaryCauses\":[],\"suggestedActions\":[],\"reasoning\":\"\"}");
             sb.AppendLine("stationAnalysis: [{stationCode, role: RootCause|Impacted|Normal|Unknown, summary}]; secondaryCauses: [{stationCode, description}]");
         }
@@ -450,6 +450,8 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
         {
             public string StationCode { get; set; }
             public long ProjectId { get; set; }
+            /// <summary>工位诊断状态（SomeFalse/Running/AllTrue…）；约束报告单独生成的画像为空</summary>
+            public string OverallStatus { get; set; }
             public bool AmbiguousStation { get; set; }
             public List<string> ConfirmedEvidence { get; set; } = new();
             public HashSet<string> ConfirmedWaitingTargets { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -709,6 +711,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
             {
                 StationCode = station.StationCode,
                 ProjectId = station.ProjectId,
+                OverallStatus = station.OverallStatus,
                 StationOrder = station.StationOrder,
             };
 
@@ -889,7 +892,7 @@ namespace HSJM.AI.AppLayer.StopCauseDiagnosis.Services
                 return;
 
             sb.AppendLine("## 结构化根因证据画像");
-            sb.AppendLine("只有 Good 且激活的 PLC 报警或标有‘判定: 确认违规’的 IO 规则支持故障候选。False、Unknown、execbits、InternalFault 标签及 FailurePathSummary 仅说明条件或流程状态，不能单独证明故障或通信中断。证据不足时 rootCauseStation 必须为 null，所有输出字段都只能描述待确认状态。评分仅用于排查排序，不能替代故障证据。报警可能锁存，故障候选仍需现场确认，不得直接描述为当前机械部件损坏。");
+            sb.AppendLine("只有 Good 且激活的 PLC 报警或标有‘判定: 确认违规’的 IO 规则支持故障候选。False、Unknown、execbits、InternalFault 标签及 FailurePathSummary 仅说明条件或流程状态，不能单独证明故障或通信中断。没有报警或确认违规时，按执行机构反馈、GRAPH 卡步和等待链给出待确认的根因工位，所有输出字段都只能描述待确认状态。评分仅用于排查排序，不能替代故障证据。报警可能锁存，故障候选仍需现场确认，不得直接描述为当前机械部件损坏。");
             foreach (var profile in evidenceProfiles.Take(8))
             {
                 sb.AppendLine(
